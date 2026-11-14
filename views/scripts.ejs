@@ -11,6 +11,8 @@
         <p class="page-bar-sub">Source code Lua yang disimpan di server dan dikirim ke CGT saat verifikasi berhasil.</p>
       </div>
       <div class="page-bar-actions">
+        <a class="btn" href="/admin/scripts/export">Export</a>
+        <button type="button" class="btn" data-open-modal="modal-import-scripts">Import</button>
         <a class="btn btn-primary" href="/admin/scripts/new">+ Script Baru</a>
       </div>
     </header>
@@ -102,4 +104,34 @@
     </section>
   </main>
 </div>
+<!-- Modal Import Script -->
+<div class="modal-backdrop" id="modal-import-scripts" role="dialog" aria-modal="true" aria-labelledby="import-scripts-title" hidden>
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3 class="modal-title" id="import-scripts-title">Import Script Lua</h3>
+      <button type="button" class="icon-btn" data-close-modal aria-label="Tutup">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <form method="post" action="/admin/scripts/import" class="modal-body form">
+      <div class="field-group">
+        <label class="field-label" for="import-scripts-file">Pilih File JSON Export</label>
+        <input id="import-scripts-file" type="file" accept=".json,application/json" class="input-control" data-import-file>
+      </div>
+      <div class="field-group">
+        <label class="field-label" for="import-scripts-payload">Isi JSON <span class="req">*</span></label>
+        <textarea id="import-scripts-payload" name="payload" class="input-control mono" rows="6" placeholder="Pilih file .json di atas atau tempel JSON export script..." required data-import-payload></textarea>
+      </div>
+      <label class="uid-pick-item">
+        <input type="checkbox" name="overwrite" value="1">
+        <span class="uid-pick-main"><span class="uid-pick-note">Timpa jika nama script sudah ada</span></span>
+      </label>
+      <div class="modal-actions">
+        <button type="button" class="btn" data-close-modal>Batal</button>
+        <button type="submit" class="btn btn-primary">Import Script</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <%- include('partials/foot') %>

@@ -19,6 +19,8 @@
         </button>
         <a class="btn" href="/admin/logs">Log Aktivitas</a>
         <a class="btn" href="/admin/tokens">Token Buyer</a>
+        <a class="btn" href="/admin/whitelist/export">Export</a>
+        <button type="button" class="btn" data-open-modal="modal-import-whitelist">Import</button>
         <button type="button" class="btn btn-primary" data-open-modal="modal-add-uid">+ Tambah UID</button>
       </div>
     </header>
@@ -296,6 +298,36 @@
       <div class="modal-actions">
         <button type="button" class="btn" data-close-modal>Batal</button>
         <button type="submit" class="btn btn-primary" <%= scripts.length === 0 ? 'disabled' : '' %>>Simpan UID</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal Import Whitelist -->
+<div class="modal-backdrop" id="modal-import-whitelist" role="dialog" aria-modal="true" aria-labelledby="import-whitelist-title" hidden>
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3 class="modal-title" id="import-whitelist-title">Import Data Whitelist UID</h3>
+      <button type="button" class="icon-btn" data-close-modal aria-label="Tutup">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <form method="post" action="/admin/whitelist/import" class="modal-body form">
+      <div class="field-group">
+        <label class="field-label" for="import-whitelist-file">Pilih File JSON Export</label>
+        <input id="import-whitelist-file" type="file" accept=".json,application/json" class="input-control" data-import-file>
+      </div>
+      <div class="field-group">
+        <label class="field-label" for="import-whitelist-payload">Isi JSON <span class="req">*</span></label>
+        <textarea id="import-whitelist-payload" name="payload" class="input-control mono" rows="6" placeholder="Pilih file .json di atas atau tempel JSON export whitelist..." required data-import-payload></textarea>
+      </div>
+      <label class="uid-pick-item">
+        <input type="checkbox" name="overwrite" value="1">
+        <span class="uid-pick-main"><span class="uid-pick-note">Timpa jika UID sudah ada di whitelist</span></span>
+      </label>
+      <div class="modal-actions">
+        <button type="button" class="btn" data-close-modal>Batal</button>
+        <button type="submit" class="btn btn-primary">Import Whitelist</button>
       </div>
     </form>
   </div>

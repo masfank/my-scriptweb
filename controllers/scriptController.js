@@ -152,3 +152,99 @@ exports.remove = asyncHandler(async (req, res) => {
 
   return back(res, '/admin/scripts', 'ok', `Script ${name} dihapus`);
 });
+
+exports.exportData = asyncHandler(async (req, res) => {
+  const data = await store.read();
+  const files = await store.listScripts();
+  const scripts = [];
+
+  for (const file of files) {
+    const source = await store.readScript(file.name);
+    if (source === null) continue;
+    const meta = data.scripts[file.name] || {};
+    scripts.push({
+      name: file.name,
+      version: meta.version || '1.0.0',
+      updated_at: meta.updated_at || null,
+      source,
+    });
+  }
+
+  const dateTag = new Date().toISOString().slice(0, 10);
+  res.setHeader('Content-Disposition', `attachment; filename="scripts-export-${dateTag}.json"`);
+  return res.json({
+    type: 'script-web-scripts',
+    version: 1,
+    exported_at: new Date().toISOString(),
+    scripts,
+  });
+});
+
+exports.importData = asyncHandler(async (req, res) => {
+  const rawPayload = typeof req.body.payload === 'string' ? req.body.payload.trim() : '';
+  const overwrite = req.body.overwrite === '1' || req.body.overwrite === 'true';
+
+  if (!rawPayload) return back(res, '/admin/scripts', 'err', 'Isi JSON import tidak boleh kosong');
+
+  let parsed;
+  try {
+    parsed = JSON.parse(rawPayload);
+  } catch {
+    return back(res, '/admin/scripts', 'err', 'Format JSON script tidak valid');
+  }
+
+  let items = [];
+  const rawList = parsed && typeof parsed === 'object' && parsed.scripts !== undefined ? parsed.scripts : parsed;
+  if (Array.isArray(rawList)) {
+    items = rawList;
+  } else if (rawList && typeof rawList === 'object') {
+    items = Object.entries(rawList).map(([name, val]) => ({ name, ...(val && typeof val === 'object' ? val : {}) }));
+  } else {
+    return back(res, '/admin/scripts', 'err', 'Struktur JSON script tidak valid');
+  }
+
+  const data = await store.read();
+  let added = 0;
+  let updated = 0;
+  let skipped = 0;
+  const metaUpdates = {};
+
+  for (const item of items) {
+    if (!item || typeof item !== 'object') {
+      skipped++;
+      continue;
+    }
+    const name = typeof item.name === 'string' ? item.name.trim() : '';
+    const source = typeof item.source === 'string' ? item.source : '';
+    const version = (typeof item.version === 'string' ? item.version.trim() : '').slice(0, 32) || '1.0.0';
+
+    if (!store.isSafeName(name) || !source || source.length > MAX_SOURCE) {
+      skipped++;
+      continue;
+    }
+
+    const existed = Boolean(data.scripts[name]) || (await store.readScript(name)) !== null;
+    if (existed && !overwrite) {
+      skipped++;
+      continue;
+    }
+
+    await store.writeScript(name, source);
+    metaUpdates[name] = {
+      version,
+      updated_at: typeof item.updated_at === 'string' && item.updated_at ? item.updated_at : new Date().toISOString(),
+    };
+    if (existed) updated++;
+    else added++;
+  }
+
+  if (Object.keys(metaUpdates).length > 0) {
+    await store.update((db) => {
+      for (const [name, meta] of Object.entries(metaUpdates)) {
+        db.scripts[name] = meta;
+      }
+    });
+  }
+
+  return back(res, '/admin/scripts', 'ok', `Import script selesai: ${added} ditambah, ${updated} ditimpa, ${skipped} dilewati.`);
+});

@@ -11,6 +11,8 @@
         <p class="page-bar-sub">Kredensial per-buyer (<code>X-Buyer-Token</code>) yang otomatis mengunci ke satu UID saat verifikasi pertama.</p>
       </div>
       <div class="page-bar-actions">
+        <a class="btn" href="/admin/tokens/export">Export</a>
+        <button type="button" class="btn" data-open-modal="modal-import-tokens">Import</button>
         <button type="button" class="btn" data-open-modal="modal-loader-gen">Generator Loader</button>
         <button type="button" class="btn btn-primary" data-open-modal="modal-add-token">+ Buat Token</button>
       </div>
@@ -218,6 +220,36 @@
       <div class="modal-actions">
         <button type="button" class="btn" data-close-modal>Batal</button>
         <button class="btn btn-primary" type="submit">Buat Token</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal Import Token -->
+<div class="modal-backdrop" id="modal-import-tokens" role="dialog" aria-modal="true" aria-labelledby="import-tokens-title" hidden>
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3 class="modal-title" id="import-tokens-title">Import Data Token Buyer</h3>
+      <button type="button" class="icon-btn" data-close-modal aria-label="Tutup">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <form method="post" action="/admin/tokens/import" class="modal-body form">
+      <div class="field-group">
+        <label class="field-label" for="import-tokens-file">Pilih File JSON Export</label>
+        <input id="import-tokens-file" type="file" accept=".json,application/json" class="input-control" data-import-file>
+      </div>
+      <div class="field-group">
+        <label class="field-label" for="import-tokens-payload">Isi JSON <span class="req">*</span></label>
+        <textarea id="import-tokens-payload" name="payload" class="input-control mono" rows="6" placeholder="Pilih file .json di atas atau tempel JSON export token..." required data-import-payload></textarea>
+      </div>
+      <label class="uid-pick-item">
+        <input type="checkbox" name="overwrite" value="1">
+        <span class="uid-pick-main"><span class="uid-pick-note">Timpa jika ID token sudah ada</span></span>
+      </label>
+      <div class="modal-actions">
+        <button type="button" class="btn" data-close-modal>Batal</button>
+        <button type="submit" class="btn btn-primary">Import Token</button>
       </div>
     </form>
   </div>

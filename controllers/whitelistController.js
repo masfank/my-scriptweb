@@ -303,3 +303,83 @@ exports.remove = asyncHandler(async (req, res) => {
   const data = await store.read();
   return res.json({ ok: true, removed: existed, stats: stats(data) });
 });
+
+exports.exportData = asyncHandler(async (req, res) => {
+  const data = await store.read();
+  const dateTag = new Date().toISOString().slice(0, 10);
+  const payload = {
+    type: 'script-web-whitelist',
+    version: 1,
+    exported_at: new Date().toISOString(),
+    whitelist: data.whitelist || {},
+  };
+  res.setHeader('Content-Disposition', `attachment; filename="whitelist-export-${dateTag}.json"`);
+  return res.json(payload);
+});
+
+exports.importData = asyncHandler(async (req, res) => {
+  const rawPayload = typeof req.body.payload === 'string' ? req.body.payload.trim() : '';
+  const overwrite = req.body.overwrite === '1' || req.body.overwrite === 'true';
+  const back = (key, message) => res.redirect(`/admin?${key}=` + encodeURIComponent(message));
+
+  if (!rawPayload) return back('err', 'Isi JSON import tidak boleh kosong');
+
+  let parsed;
+  try {
+    parsed = JSON.parse(rawPayload);
+  } catch {
+    return back('err', 'Format JSON whitelist tidak valid');
+  }
+
+  const source =
+    parsed && typeof parsed === 'object' && !Array.isArray(parsed) && parsed.whitelist && typeof parsed.whitelist === 'object'
+      ? parsed.whitelist
+      : parsed;
+
+  if (!source || typeof source !== 'object' || Array.isArray(source)) {
+    return back('err', 'Struktur JSON whitelist harus object { "UID": { ... } }');
+  }
+
+  let added = 0;
+  let updated = 0;
+  let skipped = 0;
+  const now = new Date().toISOString();
+
+  await store.update((db) => {
+    for (const [rawUid, item] of Object.entries(source)) {
+      const uid = String(rawUid || '').trim();
+      if (!UID_RE.test(uid) || !item || typeof item !== 'object') {
+        skipped++;
+        continue;
+      }
+      const existed = Boolean(db.whitelist[uid]);
+      if (existed && !overwrite) {
+        skipped++;
+        continue;
+      }
+
+      const rawScripts = Array.isArray(item.scripts) ? item.scripts : [];
+      const scripts = Array.from(
+        new Set(rawScripts.map((s) => String(s || '').trim()).filter((s) => store.isSafeName(s)))
+      );
+      const discordRaw = typeof item.discord_id === 'string' ? item.discord_id.trim() : '';
+      const discord_id = DISCORD_ID_RE.test(discordRaw) ? discordRaw : '';
+      const note = typeof item.note === 'string' ? item.note.trim().slice(0, 200) : '';
+      const status = item.status === 'banned' ? 'banned' : 'active';
+
+      db.whitelist[uid] = {
+        status,
+        scripts,
+        discord_id,
+        note,
+        created_at: typeof item.created_at === 'string' && item.created_at ? item.created_at : now,
+        last_check: typeof item.last_check === 'string' ? item.last_check : null,
+        check_count: Number.isFinite(Number(item.check_count)) ? Math.max(0, Number(item.check_count)) : 0,
+      };
+      if (existed) updated++;
+      else added++;
+    }
+  });
+
+  return back('ok', `Import whitelist selesai: ${added} ditambah, ${updated} ditimpa, ${skipped} dilewati.`);
+});

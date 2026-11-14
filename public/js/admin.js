@@ -743,6 +743,23 @@ if (tokenUidClear && tokenUidList) {
   });
 }
 
+/* ----------------------------------------------------- JSON File Importer */
+for (const fileInput of document.querySelectorAll('[data-import-file]')) {
+  fileInput.addEventListener('change', async () => {
+    const file = fileInput.files && fileInput.files[0];
+    if (!file) return;
+    const form = fileInput.closest('form');
+    const target = form ? form.querySelector('[data-import-payload]') : null;
+    if (!target) return;
+    try {
+      target.value = await file.text();
+      toast(`File ${file.name} dimuat`, 'ok');
+    } catch {
+      toast('Gagal membaca file JSON', 'err');
+    }
+  });
+}
+
 if (genCopyBtn) {
   genCopyBtn.addEventListener('click', async () => {
     try {

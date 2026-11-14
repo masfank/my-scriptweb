@@ -11,6 +11,7 @@
  * menonaktifkan token sepenuhnya (revoke).
  */
 
+const crypto = require('crypto');
 const store = require('../db/store');
 const asyncHandler = require('../middleware/asyncHandler');
 
@@ -265,4 +266,104 @@ exports.remove = asyncHandler(async (req, res) => {
   }
 
   return res.json({ ok: true, removed: existed });
+});
+
+exports.exportData = asyncHandler(async (req, res) => {
+  const data = await store.read();
+  const dateTag = new Date().toISOString().slice(0, 10);
+  res.setHeader('Content-Disposition', `attachment; filename="tokens-export-${dateTag}.json"`);
+  return res.json({
+    type: 'script-web-tokens',
+    version: 1,
+    exported_at: new Date().toISOString(),
+    tokens: data.tokens || {},
+  });
+});
+
+exports.importData = asyncHandler(async (req, res) => {
+  const rawPayload = typeof req.body.payload === 'string' ? req.body.payload.trim() : '';
+  const overwrite = req.body.overwrite === '1' || req.body.overwrite === 'true';
+  const back = (key, message) => res.redirect(`/admin/tokens?${key}=` + encodeURIComponent(message));
+
+  if (!rawPayload) return back('err', 'Isi JSON import tidak boleh kosong');
+
+  let parsed;
+  try {
+    parsed = JSON.parse(rawPayload);
+  } catch {
+    return back('err', 'Format JSON token tidak valid');
+  }
+
+  const source =
+    parsed && typeof parsed === 'object' && !Array.isArray(parsed) && parsed.tokens && typeof parsed.tokens === 'object'
+      ? parsed.tokens
+      : parsed;
+
+  if (!source || typeof source !== 'object' || Array.isArray(source)) {
+    return back('err', 'Struktur JSON token harus object { "id16hex": { ... } }');
+  }
+
+  let added = 0;
+  let updated = 0;
+  let skipped = 0;
+  const now = new Date().toISOString();
+
+  await store.update((db) => {
+    for (const [rawId, item] of Object.entries(source)) {
+      if (!item || typeof item !== 'object') {
+        skipped++;
+        continue;
+      }
+      const id = /^[a-f0-9]{16}$/.test(rawId) ? rawId : crypto.randomBytes(8).toString('hex');
+      const rawToken = typeof item.raw === 'string' && /^[a-f0-9]{64}$/.test(item.raw.trim()) ? item.raw.trim() : '';
+      let hash = typeof item.hash === 'string' && /^[a-f0-9]{64}$/.test(item.hash.trim()) ? item.hash.trim() : '';
+      if (!hash && rawToken) {
+        hash = store.hashToken(rawToken);
+      }
+      const label = typeof item.label === 'string' ? item.label.trim().slice(0, LABEL_MAX) : '';
+      if (!hash || !label) {
+        skipped++;
+        continue;
+      }
+
+      const existed = Boolean(db.tokens[id]);
+      if (existed && !overwrite) {
+        skipped++;
+        continue;
+      }
+
+      const rawUids = Array.isArray(item.uids)
+        ? item.uids
+        : item.uid !== null && item.uid !== undefined && String(item.uid).trim() !== ''
+          ? [item.uid]
+          : [];
+      const uids = Array.from(
+        new Set(rawUids.map((u) => String(u ?? '').trim()).filter((u) => UID_RE.test(u)))
+      );
+
+      const bundleRaw = typeof item.bundle === 'string' ? item.bundle.trim() : '';
+      const bundle = bundleRaw && store.isSafeName(bundleRaw) ? bundleRaw : null;
+
+      const entry = {
+        hash,
+        label,
+        note: typeof item.note === 'string' ? item.note.trim().slice(0, NOTE_MAX) : '',
+        uid: uids[0] || null,
+        uids,
+        active: item.active !== false,
+        bundle,
+        created_at: typeof item.created_at === 'string' && item.created_at ? item.created_at : now,
+        locked_at: uids.length > 0 ? (typeof item.locked_at === 'string' ? item.locked_at : now) : null,
+        last_used: typeof item.last_used === 'string' ? item.last_used : null,
+        use_count: Number.isFinite(Number(item.use_count)) ? Math.max(0, Number(item.use_count)) : 0,
+      };
+      if (rawToken) entry.raw = rawToken;
+
+      db.tokens[id] = entry;
+      if (existed) updated++;
+      else added++;
+    }
+  });
+
+  return back('ok', `Import token selesai: ${added} ditambah, ${updated} ditimpa, ${skipped} dilewati.`);
 });

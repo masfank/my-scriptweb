@@ -58,14 +58,18 @@ router.use(async (req, res, next) => {
 });
 
 router.get('/', whitelist.dashboard);
+router.get('/whitelist/export', whitelist.exportData);
+router.post('/whitelist/import', whitelist.importData);
 router.post('/whitelist', whitelist.create);
 router.get('/whitelist/:uid', validateUid, whitelist.editForm);
 router.post('/whitelist/:uid', validateUid, whitelist.update);
 router.post('/whitelist/:uid/toggle', validateUid, whitelist.toggle);
 router.post('/whitelist/:uid/delete', validateUid, whitelist.remove);
 
-/* /scripts/new HARUS sebelum /scripts/:name */
+/* /scripts/new, /scripts/export, /scripts/import HARUS sebelum /scripts/:name */
 router.get('/scripts', scripts.list);
+router.get('/scripts/export', scripts.exportData);
+router.post('/scripts/import', scripts.importData);
 router.get('/scripts/new', scripts.newForm);
 router.post('/scripts', scripts.saveNew);
 router.get('/scripts/:name', validateName, scripts.editForm);
@@ -74,6 +78,8 @@ router.post('/scripts/:name/delete', validateName, scripts.remove);
 
 /* token buyer: dibuat di sini, dikirim ke loader sebagai X-Buyer-Token */
 router.get('/tokens', tokens.list);
+router.get('/tokens/export', tokens.exportData);
+router.post('/tokens/import', tokens.importData);
 router.get('/tokens/new/fresh', tokens.consumeFresh);
 router.post('/tokens', tokens.create);
 router.post('/tokens/:id/toggle', tokens.toggle);
