@@ -14,106 +14,115 @@ const publicRoutes = require('./routes/public');
 const authRoutes = require('./routes/auth');
 const adminRoutes = require('./routes/admin');
 
-const SESSION_SECRET = process.env.SESSION_SECRET;
-if (!SESSION_SECRET) {
-  console.error('SESSION_SECRET wajib di-set (string acak 64 hex). Lihat .env.example.');
-  process.exit(1);
-}
+function createApp(sessionSecret) {
+  const app = express();
+  app.disable('x-powered-by');
 
-const app = express();
-app.disable('x-powered-by');
+  /* Railway/Render/nginx: percayai satu hop proxy supaya req.ip = IP buyer. */
+  const rawProxy = process.env.TRUST_PROXY ?? '1';
+  app.set(
+    'trust proxy',
+    rawProxy === '0' || rawProxy === 'false'
+      ? false
+      : Number.isNaN(Number(rawProxy))
+        ? rawProxy
+        : Number(rawProxy)
+  );
 
-/* Railway/Render/nginx: percayai satu hop proxy supaya req.ip = IP buyer. */
-const rawProxy = process.env.TRUST_PROXY ?? '1';
-app.set(
-  'trust proxy',
-  rawProxy === '0' || rawProxy === 'false'
-    ? false
-    : Number.isNaN(Number(rawProxy))
-      ? rawProxy
-      : Number(rawProxy)
-);
-
-app.use(
-  helmet({
-    contentSecurityPolicy: {
-      directives: {
-        defaultSrc: ["'self'"],
-        scriptSrc: ["'self'"],
-        styleSrc: ["'self'"],
-        imgSrc: ["'self'", 'data:'],
-        objectSrc: ["'none'"],
-        baseUri: ["'self'"],
-        formAction: ["'self'"],
-        frameAncestors: ["'none'"],
-        upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null,
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'"],
+          styleSrc: ["'self'"],
+          imgSrc: ["'self'", 'data:'],
+          objectSrc: ["'none'"],
+          baseUri: ["'self'"],
+          formAction: ["'self'"],
+          frameAncestors: ["'none'"],
+          upgradeInsecureRequests: process.env.NODE_ENV === 'production' ? [] : null,
+        },
       },
-    },
-    referrerPolicy: { policy: 'no-referrer' },
-  })
-);
+      referrerPolicy: { policy: 'no-referrer' },
+    })
+  );
 
-app.set('view engine', 'ejs');
-app.set('views', path.join(__dirname, 'views'));
+  app.set('view engine', 'ejs');
+  app.set('views', path.join(__dirname, 'views'));
 
-app.use(express.urlencoded({ extended: false, limit: '5mb' }));
-app.use(express.static(path.join(__dirname, 'public'), { maxAge: '1h' }));
+  app.use(express.urlencoded({ extended: false, limit: '5mb' }));
+  app.use(express.static(path.join(__dirname, 'public'), { maxAge: '1h' }));
 
-app.use(
-  cookieSession({
-    name: 'sid',
-    keys: [SESSION_SECRET],
-    maxAge: 8 * 60 * 60 * 1000,
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
-  })
-);
+  app.use(
+    cookieSession({
+      name: 'sid',
+      keys: [sessionSecret],
+      maxAge: 8 * 60 * 60 * 1000,
+      httpOnly: true,
+      sameSite: 'lax',
+      secure: process.env.NODE_ENV === 'production',
+    })
+  );
 
-app.use((req, res, next) => {
-  if (req.session && !req.session.csrfToken) {
-    req.session.csrfToken = crypto.randomBytes(16).toString('hex');
-  }
-  res.locals.csrfToken = req.session ? req.session.csrfToken : '';
-  next();
-});
-
-app.use(authRoutes);
-app.use('/admin', adminRoutes);
-
-app.get('/', (req, res) => res.redirect('/admin'));
-
-app.use(publicRoutes);
-
-/* 404 */
-app.use((req, res) => {
-  if (req.path.startsWith('/api/')) {
-    return res.status(404).type('text/plain').send('ERROR:not_found');
-  }
-  return res.status(404).render('error', {
-    title: '404',
-    status: 404,
-    message: 'Halaman tidak ditemukan',
+  app.use((req, res, next) => {
+    if (req.session && !req.session.csrfToken) {
+      req.session.csrfToken = crypto.randomBytes(16).toString('hex');
+    }
+    res.locals.csrfToken = req.session ? req.session.csrfToken : '';
+    next();
   });
-});
 
-/* error */
-app.use((err, req, res, next) => {
-  console.error('[error]', err && err.stack ? err.stack : err);
-  if (res.headersSent) return next(err);
-  if (req.path.startsWith('/api/')) {
-    return res.status(500).type('text/plain').send('ERROR:server');
-  }
-  return res.status(500).render('error', {
-    title: '500',
-    status: 500,
-    message: 'Terjadi kesalahan di server. Cek console.',
+  app.use(authRoutes);
+  app.use('/admin', adminRoutes);
+
+  app.get('/', (req, res) => res.redirect('/admin'));
+
+  app.use(publicRoutes);
+
+  /* 404 */
+  app.use((req, res) => {
+    if (req.path.startsWith('/api/')) {
+      return res.status(404).type('text/plain').send('ERROR:not_found');
+    }
+    return res.status(404).render('error', {
+      title: '404',
+      status: 404,
+      message: 'Halaman tidak ditemukan',
+    });
   });
-});
+
+  /* error */
+  app.use((err, req, res, next) => {
+    console.error('[error]', err && err.stack ? err.stack : err);
+    if (res.headersSent) return next(err);
+    if (req.path.startsWith('/api/')) {
+      return res.status(500).type('text/plain').send('ERROR:server');
+    }
+    return res.status(500).render('error', {
+      title: '500',
+      status: 500,
+      message: 'Terjadi kesalahan di server. Cek console.',
+    });
+  });
+
+  return app;
+}
 
 async function main() {
   await store.ensureDataDir();
   const data = await store.read();
+
+  let sessionSecret = process.env.SESSION_SECRET || data.settings.session_secret;
+  if (!sessionSecret) {
+    sessionSecret = crypto.randomBytes(32).toString('hex');
+    await store.update((db) => {
+      if (!db.settings.session_secret) {
+        db.settings.session_secret = sessionSecret;
+      }
+    });
+    console.log('[bootstrap] settings.session_secret dibuat otomatis.');
+  }
 
   if (!data.settings.app_secret) {
     const initialSecret = process.env.APP_SECRET || crypto.randomBytes(32).toString('hex');
@@ -132,8 +141,8 @@ async function main() {
 
     if (!/^[A-Za-z0-9_.-]{3,32}$/.test(adminUser)) {
       console.warn('[bootstrap] ADMIN_USERNAME tidak valid (3-32 karakter [A-Za-z0-9_.-]), dilewati.');
-    } else if (adminPassword.length < 10) {
-      console.warn('[bootstrap] ADMIN_PASSWORD minimal 10 karakter, auto-seed dilewati.');
+    } else if (adminPassword.length < 6) {
+      console.warn('[bootstrap] ADMIN_PASSWORD minimal 6 karakter, auto-seed dilewati.');
     } else if (!data.admins[adminUser] || forceSeed) {
       const passwordHash = await bcrypt.hash(adminPassword, 12);
       const apiToken = crypto.randomBytes(32).toString('hex');
@@ -150,6 +159,7 @@ async function main() {
     }
   }
 
+  const app = createApp(sessionSecret);
   const host = process.env.HOST || '0.0.0.0';
   const port = Number(process.env.PORT) || 3000;
   const server = app.listen(port, host, () => {

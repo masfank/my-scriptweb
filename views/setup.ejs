@@ -1,0 +1,36 @@
+<%- include('partials/head', { title: title }) %>
+<main class="auth-shell">
+  <div class="auth-card">
+    <div class="auth-head">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">LU</span>
+        <span>Lisensi UID</span>
+        <span class="brand-tag">Setup</span>
+      </div>
+      <h1>Buat Admin Pertama</h1>
+      <p>Belum ada akun admin terdaftar. Buat akun administrator untuk mulai mengelola panel.</p>
+    </div>
+
+    <%- include('partials/banner', { msg: null, err: err }) %>
+
+    <form method="post" action="/setup" class="form">
+      <input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>">
+      <div class="field-group">
+        <label class="field-label" for="username">Username Admin</label>
+        <input id="username" type="text" name="username" class="input-control" value="admin" minlength="3" maxlength="32" pattern="[A-Za-z0-9_.-]{3,32}" autocomplete="username" autofocus required>
+        <span class="field-hint">3–32 karakter (huruf, angka, <code>_</code>, <code>.</code>, <code>-</code>).</span>
+      </div>
+
+      <div class="field-group">
+        <label class="field-label" for="password">Password</label>
+        <input id="password" type="password" name="password" class="input-control" minlength="6" autocomplete="new-password" required>
+        <span class="field-hint">Minimal 6 karakter.</span>
+      </div>
+
+      <button class="btn btn-primary btn-block" type="submit">Buat Admin &amp; Masuk</button>
+    </form>
+  </div>
+</main>
+<script src="/js/admin.js?v=20" defer></script>
+</body>
+</html>

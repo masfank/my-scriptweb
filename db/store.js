@@ -146,6 +146,9 @@ function validateShape(data) {
   if (data.settings.app_secret !== undefined && typeof data.settings.app_secret !== 'string') {
     fail('settings.app_secret harus string');
   }
+  if (data.settings.session_secret !== undefined && typeof data.settings.session_secret !== 'string') {
+    fail('settings.session_secret harus string');
+  }
   if (data.settings.discord_webhook !== undefined && typeof data.settings.discord_webhook !== 'string') {
     fail('settings.discord_webhook harus string');
   }
