@@ -1,0 +1,226 @@
+<%- include('partials/head', { title: title }) %>
+<div class="app-shell">
+  <%- include('partials/nav', { admin: admin, active: 'tokens' }) %>
+
+  <main class="main-content">
+    <%- include('partials/banner', { msg: msg, err: err }) %>
+
+    <header class="page-bar">
+      <div class="page-bar-title">
+        <h1>Token Buyer</h1>
+        <p class="page-bar-sub">Kredensial per-buyer (<code>X-Buyer-Token</code>) yang otomatis mengunci ke satu UID saat verifikasi pertama.</p>
+      </div>
+      <div class="page-bar-actions">
+        <button type="button" class="btn" data-open-modal="modal-loader-gen">Generator Loader</button>
+        <button type="button" class="btn btn-primary" data-open-modal="modal-add-token">+ Buat Token</button>
+      </div>
+    </header>
+
+    <% if (typeof fresh !== 'undefined' && fresh) { %>
+      <section class="fresh-token-card" role="region" aria-label="Token baru">
+        <div class="fresh-token-head">
+          <h2>Token Baru Dibuat — Hanya Ditampilkan Sekali</h2>
+          <span class="mono muted">Label: <strong><%= fresh.label %></strong></span>
+        </div>
+        <div class="copy-box">
+          <input id="fresh-token-inline" type="text" value="<%= fresh.raw %>" readonly aria-label="Token buyer baru">
+          <button type="button" class="btn" data-copy="<%= fresh.raw %>">Salin Token</button>
+          <button type="button" class="btn btn-primary" data-open-loader-token="<%= fresh.raw %>" data-open-loader-script="<%= fresh.bundle || (scripts[0] || 'autofind') %>">Buat Loader.lua</button>
+        </div>
+      </section>
+    <% } %>
+
+    <section class="metric-strip" aria-label="Ringkasan token">
+      <div class="metric-item">
+        <span class="metric-label">Total Token</span>
+        <span class="metric-val"><%= rows.length %></span>
+      </div>
+      <div class="metric-item">
+        <span class="metric-label"><span class="status-dot"></span> Aktif</span>
+        <span class="metric-val is-ok"><%= rows.filter(function(r){ return r.active; }).length %></span>
+      </div>
+      <div class="metric-item">
+        <span class="metric-label">Terkunci ke UID</span>
+        <span class="metric-val"><%= rows.filter(function(r){ return r.locked; }).length %></span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="table-scroll">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Label</th>
+              <th>UID Terkunci</th>
+              <th>Bundle</th>
+              <th>Catatan</th>
+              <th>Terakhir Dipakai</th>
+              <th class="num">Hits</th>
+              <th>Status</th>
+              <th class="col-actions">Aksi</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% if (rows.length === 0) { %>
+              <tr>
+                <td colspan="8">
+                  <div class="empty-state">
+                    <h3>Belum ada token buyer</h3>
+                    <p>Klik "+ Buat Token" untuk membuat token 64-hex baru.</p>
+                  </div>
+                </td>
+              </tr>
+            <% } %>
+            <% rows.forEach(function (row) { %>
+              <tr data-token="<%= row.id %>">
+                <td><strong><%= row.label %></strong></td>
+                <td class="mono js-locked">
+                  <% if (row.locked) { %>
+                    <div class="uid-chip-list">
+                      <% row.uids.forEach(function (u) { %>
+                        <a href="/admin/whitelist/<%= u %>" class="uid-code"><%= u %></a>
+                      <% }); %>
+                    </div>
+                  <% } else { %>
+                    <span class="muted">Belum terkunci</span>
+                  <% } %>
+                </td>
+                <td>
+                  <% if (row.bundle) { %>
+                    <span class="chip"><%= row.bundle %></span>
+                  <% } else { %>
+                    <span class="muted">—</span>
+                  <% } %>
+                </td>
+                <td><%= row.note || '—' %></td>
+                <td class="mono muted"><%= row.last_used_display %></td>
+                <td class="num mono js-uses"><%= row.use_count %></td>
+                <td>
+                  <span class="badge badge-<%= row.active ? 'active' : 'banned' %> js-token-status">
+                    <%= row.active ? 'active' : 'revoked' %>
+                  </span>
+                </td>
+                <td class="col-actions">
+                  <div class="row-actions">
+                    <button
+                      class="btn btn-sm btn-primary"
+                      type="button"
+                      data-open-loader-id="<%= row.id %>"
+                      data-open-loader-label="<%= row.label %>"
+                      data-open-loader-uid="<%= row.uids.join(', ') %>"
+                      data-open-loader-script="<%= row.bundle || (scripts[0] || 'autofind') %>"
+                      data-open-loader-token="<%= row.raw || (typeof fresh !== 'undefined' && fresh && fresh.id === row.id ? fresh.raw : '') %>"
+                    >Ambil Script</button>
+                    <button class="btn btn-sm" type="button" data-action="token-unlock" data-id="<%= row.id %>" <%= row.locked ? '' : 'disabled' %>>Unlock</button>
+                    <button class="btn btn-sm" type="button" data-action="token-toggle" data-id="<%= row.id %>"><%= row.active ? 'Revoke' : 'Aktifkan' %></button>
+                    <button class="btn btn-sm btn-danger-ghost" type="button" data-action="token-delete" data-id="<%= row.id %>">Hapus</button>
+                  </div>
+                </td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="uid-cards">
+        <% rows.forEach(function (row) { %>
+          <div class="uid-card" data-token="<%= row.id %>">
+            <div class="uid-card-head">
+              <strong><%= row.label %></strong>
+              <span class="badge badge-<%= row.active ? 'active' : 'banned' %> js-token-status"><%= row.active ? 'active' : 'revoked' %></span>
+            </div>
+            <div class="uid-card-meta">
+              <span class="mono js-locked">UID: <%= row.locked ? row.uids.join(', ') : 'Belum terkunci' %></span>
+              <span class="mono js-uses"><%= row.use_count %>x</span>
+            </div>
+            <div class="uid-card-actions">
+              <button
+                class="btn btn-sm btn-primary"
+                type="button"
+                data-open-loader-id="<%= row.id %>"
+                data-open-loader-label="<%= row.label %>"
+                data-open-loader-uid="<%= row.uids.join(', ') %>"
+                data-open-loader-script="<%= row.bundle || (scripts[0] || 'autofind') %>"
+                data-open-loader-token="<%= row.raw || (typeof fresh !== 'undefined' && fresh && fresh.id === row.id ? fresh.raw : '') %>"
+              >Ambil Script</button>
+              <button class="btn btn-sm" type="button" data-action="token-unlock" data-id="<%= row.id %>" <%= row.locked ? '' : 'disabled' %>>Unlock</button>
+              <button class="btn btn-sm" type="button" data-action="token-toggle" data-id="<%= row.id %>"><%= row.active ? 'Revoke' : 'Aktifkan' %></button>
+              <button class="btn btn-sm btn-danger-ghost" type="button" data-action="token-delete" data-id="<%= row.id %>">Hapus</button>
+            </div>
+          </div>
+        <% }); %>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- Modal Buat Token -->
+<div class="modal-backdrop" id="modal-add-token" role="dialog" aria-modal="true" aria-labelledby="add-token-title" hidden>
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3 class="modal-title" id="add-token-title">Buat Token Buyer Baru</h3>
+      <button type="button" class="icon-btn" data-close-modal aria-label="Tutup">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <form method="post" action="/admin/tokens" class="modal-body form">
+      <div class="form-grid">
+        <div class="field-group">
+          <label class="field-label" for="label">Label Buyer <span class="req">*</span></label>
+          <input id="label" type="text" name="label" class="input-control" maxlength="64" placeholder="Contoh: Budi" required>
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="bundle">Script Bundle (Opsional)</label>
+          <select id="bundle" name="bundle" class="input-control">
+            <option value="">— Tanpa penanda —</option>
+            <% scripts.forEach(function (name) { %>
+              <option value="<%= name %>"><%= name %>.lua</option>
+            <% }); %>
+          </select>
+        </div>
+      </div>
+
+      <div class="field-group">
+        <label class="field-label" for="note">Catatan</label>
+        <input id="note" type="text" name="note" class="input-control" maxlength="200" placeholder="Invoice / Discord">
+      </div>
+
+      <div class="field-group">
+        <label class="field-label" for="token-uid-search">Kunci ke UID Whitelist (Opsional · Bisa Pilih Banyak)</label>
+        <div class="uid-picker-box">
+          <div class="uid-picker-toolbar">
+            <input id="token-uid-search" type="search" class="input-control" placeholder="Cari UID, catatan, atau Discord ID…" autocomplete="off">
+            <span class="pill-counter" id="token-uid-count">0 dipilih (auto-lock)</span>
+            <button type="button" class="btn btn-sm" id="token-uid-clear">Kosongkan</button>
+          </div>
+          <% if (typeof whitelistOptions === 'undefined' || whitelistOptions.length === 0) { %>
+            <div class="uid-picker-empty muted">Belum ada UID di whitelist. Token akan otomatis auto-lock pada verifikasi pertama.</div>
+          <% } else { %>
+            <div class="uid-picker-list" id="token-uid-list">
+              <% whitelistOptions.forEach(function (w) { %>
+                <label class="uid-pick-item" data-search="<%= (w.uid + ' ' + w.note + ' ' + w.discord_id).toLowerCase() %>">
+                  <input type="checkbox" name="uids" value="<%= w.uid %>" data-uid-pick>
+                  <span class="uid-pick-main">
+                    <span class="mono uid-pick-id"><%= w.uid %></span>
+                    <% if (w.note) { %><span class="uid-pick-note"><%= w.note %></span><% } %>
+                    <% if (w.discord_id) { %><span class="mono uid-pick-dc">DC: <%= w.discord_id %></span><% } %>
+                  </span>
+                  <span class="badge badge-<%= w.status === 'active' ? 'active' : 'banned' %>"><%= w.status %></span>
+                </label>
+              <% }); %>
+            </div>
+          <% } %>
+        </div>
+        <span class="field-hint">Kosongkan semua = auto-lock ke UID pertama. Pilih 1 atau lebih UID untuk membatasi token hanya ke UID tersebut.</span>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn" data-close-modal>Batal</button>
+        <button class="btn btn-primary" type="submit">Buat Token</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<%- include('partials/foot') %>

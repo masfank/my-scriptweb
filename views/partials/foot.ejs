@@ -1,0 +1,114 @@
+<!-- Modal Konfirmasi -->
+<div class="modal-backdrop" id="modal-confirm" role="dialog" aria-modal="true" aria-labelledby="confirm-title" hidden>
+  <div class="modal-card modal-card-sm">
+    <div class="modal-head">
+      <h3 class="modal-title" id="confirm-title">Konfirmasi</h3>
+      <button type="button" class="icon-btn" data-confirm-cancel aria-label="Tutup">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="modal-body">
+      <p class="modal-desc" id="confirm-desc">Lanjutkan tindakan ini?</p>
+      <div class="modal-actions">
+        <button type="button" class="btn" data-confirm-cancel>Batal</button>
+        <button type="button" class="btn btn-danger" id="confirm-ok-btn" data-confirm-ok>Ya, Lanjutkan</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Modal Generator Loader -->
+<div class="modal-backdrop" id="modal-loader-gen" role="dialog" aria-modal="true" aria-labelledby="loader-gen-title" hidden>
+  <div class="modal-card modal-card-lg">
+    <div class="modal-head">
+      <h3 class="modal-title" id="loader-gen-title">Generator Loader Lua</h3>
+      <button type="button" class="icon-btn" data-close-modal aria-label="Tutup">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="modal-body form">
+      <div class="gen-context-bar" id="gen-context-bar" hidden>
+        <span class="mono muted" id="gen-context-text"></span>
+        <button type="button" class="btn btn-sm" id="gen-rotate-btn" hidden>Rotate Token Baru</button>
+      </div>
+
+      <div class="form-grid">
+        <div class="field-group">
+          <label class="field-label" for="gen-base-url">Base URL Server</label>
+          <input id="gen-base-url" type="text" class="input-control mono" placeholder="https://xxxx.trycloudflare.com" data-gen-input>
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="gen-script">Nama Script</label>
+          <input id="gen-script" type="text" class="input-control mono" value="autofind" placeholder="autofind" data-gen-input>
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="gen-token-select">Buyer Token (X-Buyer-Token)</label>
+          <select id="gen-token-select" class="input-control">
+            <option value="">— Pilih dari daftar atau isi manual —</option>
+            <% if (typeof loaderTokens !== 'undefined' && Array.isArray(loaderTokens)) { %>
+              <% loaderTokens.forEach(function (t) { %>
+                <option
+                  value="<%= t.raw %>"
+                  data-bundle="<%= t.bundle %>"
+                  data-label="<%= t.label %>"
+                  data-uids="<%= t.uids.join(', ') %>"
+                ><%= t.label %><% if (t.uids.length > 0) { %> (<%= t.uids.join(', ') %>)<% } else { %> (auto-lock)<% } %><% if (t.bundle) { %> — <%= t.bundle %>.lua<% } %></option>
+              <% }); %>
+            <% } %>
+          </select>
+          <input id="gen-token" type="text" class="input-control mono" placeholder="TOKEN_64_HEX_DARI_PANEL" aria-label="Token buyer manual" data-gen-input>
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="gen-mode">Format Output</label>
+          <select id="gen-mode" class="input-control" data-gen-input>
+            <option value="cfg">Hanya Blok CFG</option>
+            <option value="full" selected>Full loader.lua</option>
+            <option value="obf">Obfuscated (CGT Lua 5.4)</option>
+          </select>
+        </div>
+      </div>
+
+      <div class="code-preview-box">
+        <div class="code-preview-bar">
+          <span class="mono code-filename">loader.lua</span>
+          <div class="code-preview-actions">
+            <button type="button" class="btn btn-sm" id="gen-copy-btn">Salin Kode</button>
+            <button type="button" class="btn btn-sm btn-primary" id="gen-download-btn">Download .lua</button>
+          </div>
+        </div>
+        <pre class="code-preview-pre"><code id="gen-output" class="mono"></code></pre>
+      </div>
+    </div>
+  </div>
+</div>
+
+<% if (typeof discordWebhook !== 'undefined') { %>
+<!-- Modal Webhook Discord -->
+<div class="modal-backdrop" id="modal-webhook" role="dialog" aria-modal="true" aria-labelledby="webhook-title" hidden>
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3 class="modal-title" id="webhook-title">Discord Webhook History</h3>
+      <button type="button" class="icon-btn" data-close-modal aria-label="Tutup">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <form method="post" action="/admin/webhook" class="modal-body form">
+      <input type="hidden" name="next" value="<%= typeof webhookNext !== 'undefined' ? webhookNext : '/admin' %>">
+      <div class="field-group">
+        <label class="field-label" for="webhook-url-input">URL Webhook Discord</label>
+        <input id="webhook-url-input" type="url" name="webhook_url" class="input-control mono" value="<%= discordWebhook %>" placeholder="https://discord.com/api/webhooks/...">
+        <span class="field-hint">Setiap kali buyer menjalankan loader, server mengirim: Discord Buyer, ID (UID), Nama Char, Script, dan Alamat IP. Kosongkan untuk menonaktifkan.</span>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn" id="btn-test-webhook">Tes Kirim</button>
+        <button type="button" class="btn" data-close-modal>Batal</button>
+        <button type="submit" class="btn btn-primary">Simpan Webhook</button>
+      </div>
+    </form>
+  </div>
+</div>
+<% } %>
+
+<script src="/js/admin.js?v=19" defer></script>
+</body>
+</html>

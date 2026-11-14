@@ -1,0 +1,74 @@
+<%- include('partials/head', { title: title }) %>
+<div class="app-shell">
+  <%- include('partials/nav', { admin: admin, active: 'scripts' }) %>
+
+  <main class="main-content">
+    <%- include('partials/banner', { msg: msg, err: err }) %>
+
+    <header class="page-bar">
+      <div class="page-bar-title">
+        <h1><%= mode === 'new' ? 'Script Lua Baru' : name + '.lua' %></h1>
+        <p class="page-bar-sub">Source code dikirim langsung ke sandbox CGT buyer setelah verifikasi sukses (maks 2 MB).</p>
+      </div>
+      <div class="page-bar-actions">
+        <% if (mode === 'edit') { %>
+          <button type="button" class="btn" data-open-loader-script="<%= name %>">Generator Loader</button>
+        <% } %>
+        <a class="btn" href="/admin/scripts">← Kembali</a>
+      </div>
+    </header>
+
+    <form method="post" action="<%= action %>" class="panel panel-pad form" id="script-editor-form">
+      <div class="form-grid">
+        <div class="field-group">
+          <label class="field-label" for="script-name">Nama Script (tanpa .lua) <span class="req">*</span></label>
+          <input id="script-name" type="text" name="name" value="<%= name %>" class="input-control mono" pattern="[A-Za-z0-9_-]{1,64}" placeholder="autofind" <%= mode === 'edit' ? 'readonly' : 'required' %>>
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="script-version">Versi</label>
+          <input id="script-version" type="text" name="version" value="<%= version %>" class="input-control mono" maxlength="32" placeholder="1.0.0">
+        </div>
+      </div>
+
+      <div class="editor-shell" id="lua-editor-shell">
+        <div class="editor-toolbar">
+          <div class="editor-file-tab">
+            <span class="mono" id="editor-filename-display"><%= (name || 'untitled') + '.lua' %></span>
+            <span class="muted">·</span>
+            <span class="mono muted" id="stat-lines">1 baris</span>
+            <span class="muted">·</span>
+            <span class="mono muted" id="stat-bytes">0 KB</span>
+          </div>
+          <div class="editor-actions">
+            <button type="button" class="btn btn-sm" id="editor-copy-btn">Salin</button>
+            <button type="button" class="btn btn-sm" id="editor-download-btn">Unduh</button>
+            <button type="button" class="btn btn-sm" id="editor-zen-btn"><span>Fullscreen</span></button>
+          </div>
+        </div>
+
+        <div class="editor-workspace">
+          <div class="editor-gutter" id="editor-gutter" aria-hidden="true">1</div>
+          <label class="sr-only" for="source-code">Source Lua</label>
+          <textarea id="source-code" name="source_code" class="editor-textarea" rows="24" spellcheck="false" placeholder="-- Tulis source code Lua di sini..." required><%= source %></textarea>
+        </div>
+
+        <div class="editor-statusbar">
+          <div class="editor-status-left">
+            <span>LUA</span>
+            <span>UTF-8</span>
+          </div>
+          <div class="editor-status-right">
+            <span id="editor-cursor-pos">Ln 1, Col 1</span>
+            <span>Spaces: 4</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <a class="btn" href="/admin/scripts">Batal</a>
+        <button class="btn btn-primary" type="submit"><%= mode === 'new' ? 'Buat Script' : 'Simpan Perubahan' %></button>
+      </div>
+    </form>
+  </main>
+</div>
+<%- include('partials/foot') %>

@@ -1,0 +1,105 @@
+<%- include('partials/head', { title: title }) %>
+<div class="app-shell">
+  <%- include('partials/nav', { admin: admin, active: 'scripts' }) %>
+
+  <main class="main-content">
+    <%- include('partials/banner', { msg: msg, err: err }) %>
+
+    <header class="page-bar">
+      <div class="page-bar-title">
+        <h1>Scripts Lua</h1>
+        <p class="page-bar-sub">Source code Lua yang disimpan di server dan dikirim ke CGT saat verifikasi berhasil.</p>
+      </div>
+      <div class="page-bar-actions">
+        <a class="btn btn-primary" href="/admin/scripts/new">+ Script Baru</a>
+      </div>
+    </header>
+
+    <section class="metric-strip" aria-label="Ringkasan script">
+      <div class="metric-item">
+        <span class="metric-label">Total Script</span>
+        <span class="metric-val"><%= rows.length %></span>
+      </div>
+      <div class="metric-item">
+        <span class="metric-label">Total Ukuran</span>
+        <span class="metric-val"><%= rows.reduce(function(acc, r){ return acc + Number(r.size_kb || 0); }, 0).toFixed(1) %> KB</span>
+      </div>
+      <div class="metric-item">
+        <span class="metric-label">Total Penugasan UID</span>
+        <span class="metric-val"><%= rows.reduce(function(acc, r){ return acc + Number(r.used_by || 0); }, 0) %></span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="table-scroll">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Nama File</th>
+              <th>Versi</th>
+              <th class="num">Ukuran</th>
+              <th>Diperbarui</th>
+              <th class="num">UID Terhubung</th>
+              <th class="col-actions">Aksi</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% if (rows.length === 0) { %>
+              <tr>
+                <td colspan="6">
+                  <div class="empty-state">
+                    <h3>Belum ada script Lua</h3>
+                    <p>Tambahkan source code Lua pertamamu untuk mulai dihubungkan ke UID buyer.</p>
+                  </div>
+                </td>
+              </tr>
+            <% } %>
+            <% rows.forEach(function (row) { %>
+              <tr>
+                <td>
+                  <a href="/admin/scripts/<%= encodeURIComponent(row.name) %>" class="mono uid-code"><%= row.name %>.lua</a>
+                </td>
+                <td><span class="chip">v<%= row.version %></span></td>
+                <td class="num mono muted"><%= row.size_kb %> KB</td>
+                <td class="mono muted"><%= row.updated_at_display %></td>
+                <td class="num mono"><%= row.used_by %></td>
+                <td class="col-actions">
+                  <div class="row-actions">
+                    <button type="button" class="btn btn-sm" data-open-loader-script="<%= row.name %>">Loader</button>
+                    <a class="btn btn-sm" href="/admin/scripts/<%= encodeURIComponent(row.name) %>">Edit</a>
+                    <form method="post" action="/admin/scripts/<%= encodeURIComponent(row.name) %>/delete" data-confirm="Hapus script '<%= row.name %>.lua' secara permanen?" data-confirm-title="Hapus Script">
+                      <button class="btn btn-sm btn-danger-ghost" type="submit">Hapus</button>
+                    </form>
+                  </div>
+                </td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="uid-cards">
+        <% rows.forEach(function (row) { %>
+          <div class="uid-card">
+            <div class="uid-card-head">
+              <a href="/admin/scripts/<%= encodeURIComponent(row.name) %>" class="mono uid-code"><%= row.name %>.lua</a>
+              <span class="chip">v<%= row.version %></span>
+            </div>
+            <div class="uid-card-meta">
+              <span class="mono"><%= row.size_kb %> KB · <%= row.used_by %> UID</span>
+              <span class="mono"><%= row.updated_at_display %></span>
+            </div>
+            <div class="uid-card-actions">
+              <button type="button" class="btn btn-sm" data-open-loader-script="<%= row.name %>">Loader</button>
+              <a class="btn btn-sm" href="/admin/scripts/<%= encodeURIComponent(row.name) %>">Edit</a>
+              <form method="post" action="/admin/scripts/<%= encodeURIComponent(row.name) %>/delete" data-confirm="Hapus script '<%= row.name %>.lua'?">
+                <button class="btn btn-sm btn-danger-ghost" type="submit">Hapus</button>
+              </form>
+            </div>
+          </div>
+        <% }); %>
+      </div>
+    </section>
+  </main>
+</div>
+<%- include('partials/foot') %>

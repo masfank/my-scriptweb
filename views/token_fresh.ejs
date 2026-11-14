@@ -1,0 +1,32 @@
+<%- include('partials/head', { title: title }) %>
+<div class="app-shell">
+  <%- include('partials/nav', { admin: admin, active: 'tokens' }) %>
+
+  <main class="main-content">
+    <header class="page-bar">
+      <div class="page-bar-title">
+        <h1>Token Buyer Baru</h1>
+        <p class="page-bar-sub">Hanya ditampilkan sekali. Server hanya menyimpan hash SHA-256.</p>
+      </div>
+      <div class="page-bar-actions">
+        <a class="btn" href="/admin/tokens">← Daftar Token</a>
+      </div>
+    </header>
+
+    <section class="fresh-token-card">
+      <div class="fresh-token-head">
+        <h2>Token untuk <%= token.label %></h2>
+        <span class="mono muted">UID: <%= token.uid ? token.uid : 'Auto-lock saat verify pertama' %></span>
+      </div>
+      <div class="copy-box">
+        <input id="fresh-token" type="text" value="<%= token.raw %>" readonly>
+        <button type="button" class="btn" data-copy="<%= token.raw %>">Salin Token</button>
+        <button type="button" class="btn btn-primary" data-open-loader-token="<%= token.raw %>" data-open-loader-script="<%= token.bundle || 'autofind' %>">Buat Loader.lua</button>
+      </div>
+      <div class="form-actions">
+        <a class="btn btn-primary" href="/admin/tokens">Selesai</a>
+      </div>
+    </section>
+  </main>
+</div>
+<%- include('partials/foot') %>

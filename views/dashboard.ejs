@@ -1,0 +1,304 @@
+<%- include('partials/head', { title: title }) %>
+<div class="app-shell">
+  <%- include('partials/nav', { admin: admin, active: 'dashboard' }) %>
+
+  <main class="main-content">
+    <%- include('partials/banner', { msg: msg, err: err }) %>
+
+    <header class="page-bar">
+      <div class="page-bar-title">
+        <h1>Whitelist UID</h1>
+        <p class="page-bar-sub">Daftar UID Growtopia yang diizinkan mengakses script melalui endpoint verifikasi.</p>
+      </div>
+      <div class="page-bar-actions">
+        <button type="button" class="btn" data-open-modal="modal-webhook">
+          <% if (typeof discordWebhook === 'string' && discordWebhook) { %>
+            <span class="status-dot"></span>
+          <% } %>
+          <span>Webhook Discord</span>
+        </button>
+        <a class="btn" href="/admin/logs">Log Aktivitas</a>
+        <a class="btn" href="/admin/tokens">Token Buyer</a>
+        <button type="button" class="btn btn-primary" data-open-modal="modal-add-uid">+ Tambah UID</button>
+      </div>
+    </header>
+
+    <% if (typeof freshWhitelist !== 'undefined' && freshWhitelist) { %>
+      <section class="fresh-token-card" role="region" aria-label="Token dan loader UID baru">
+        <div class="fresh-token-head">
+          <h2>UID Ditambahkan &amp; Token Buyer Dibuat — Hanya Ditampilkan Sekali</h2>
+          <span class="mono muted">
+            UID: <strong><%= freshWhitelist.uid %></strong>
+            · Script: <strong><%= freshWhitelist.script %>.lua</strong>
+            <% if (freshWhitelist.discord_id) { %> · Discord: <strong><%= freshWhitelist.discord_id %></strong><% } %>
+          </span>
+        </div>
+        <div class="copy-box">
+          <input id="fresh-whitelist-token" type="text" value="<%= freshWhitelist.raw %>" readonly aria-label="Token buyer baru">
+          <button type="button" class="btn" data-copy="<%= freshWhitelist.raw %>">Salin Token</button>
+          <button
+            type="button"
+            class="btn btn-primary"
+            data-open-loader-token="<%= freshWhitelist.raw %>"
+            data-open-loader-script="<%= freshWhitelist.script %>"
+            data-open-loader-label="<%= freshWhitelist.label %>"
+            data-open-loader-uid="<%= freshWhitelist.uid %>"
+          >Ambil Script Loader</button>
+        </div>
+      </section>
+    <% } %>
+
+    <section class="metric-strip" aria-label="Ringkasan whitelist">
+      <div class="metric-item">
+        <span class="metric-label">Total Terdaftar</span>
+        <span class="metric-val" id="stat-total"><%= stats.total %></span>
+      </div>
+      <div class="metric-item">
+        <span class="metric-label"><span class="status-dot"></span> Active</span>
+        <span class="metric-val is-ok" id="stat-active"><%= stats.active %></span>
+      </div>
+      <div class="metric-item">
+        <span class="metric-label">Banned</span>
+        <span class="metric-val is-danger" id="stat-banned"><%= stats.banned %></span>
+      </div>
+      <div class="metric-item">
+        <span class="metric-label">Script Tersedia</span>
+        <span class="metric-val"><%= scripts.length %></span>
+      </div>
+    </section>
+
+    <% if (scripts.length === 0) { %>
+      <div class="banner banner-warn">
+        <div class="banner-body">
+          Belum ada script Lua. <a href="/admin/scripts/new">Buat script pertama</a> sebelum menambahkan UID.
+        </div>
+      </div>
+    <% } %>
+
+    <section class="panel">
+      <div class="filter-bar">
+        <div class="search-field">
+          <svg class="search-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input id="filter-q" type="search" placeholder="Filter UID, catatan buyer, atau script…" aria-label="Cari di halaman ini" autocomplete="off" value="<%= filters.q %>" data-filter-input>
+          <kbd class="search-kbd" aria-hidden="true">/</kbd>
+        </div>
+
+        <form method="get" action="/admin" class="filter-bar-inner">
+          <input type="hidden" name="q" value="<%= filters.q %>" data-filter-mirror>
+          <select id="filter-status" name="status" class="select-glass" aria-label="Filter status">
+            <option value="semua" <%= filters.status === 'semua' ? 'selected' : '' %>>Semua Status</option>
+            <option value="active" <%= filters.status === 'active' ? 'selected' : '' %>>Active</option>
+            <option value="banned" <%= filters.status === 'banned' ? 'selected' : '' %>>Banned</option>
+          </select>
+          <button class="btn" type="submit">Filter</button>
+          <% if (filters.q || filters.status !== 'semua') { %>
+            <a class="btn btn-ghost" href="/admin">Reset</a>
+          <% } %>
+        </form>
+
+        <span class="pill-counter" id="row-count"><%= totalRows %> baris</span>
+      </div>
+
+      <div class="empty-filter-msg" data-filter-empty hidden>
+        <div class="empty-state">
+          <p>Tidak ada baris yang cocok dengan pencarian.</p>
+        </div>
+      </div>
+
+      <div class="table-scroll">
+        <table class="table uid-table" data-filterable>
+          <thead>
+            <tr>
+              <th>UID</th>
+              <th>Status</th>
+              <th>Scripts</th>
+              <th>Discord ID</th>
+              <th>Catatan</th>
+              <th>Terakhir Cek</th>
+              <th class="num">Hits</th>
+              <th class="col-actions">Aksi</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% if (rows.length === 0) { %>
+              <tr>
+                <td colspan="8">
+                  <div class="empty-state">
+                    <h3>Belum ada UID terdaftar</h3>
+                    <p>Klik "+ Tambah UID" untuk mendaftarkan UID pertama.</p>
+                  </div>
+                </td>
+              </tr>
+            <% } %>
+            <% rows.forEach(function (row) {
+                 const searchBlob = (row.uid + ' ' + row.discord_id + ' ' + row.note + ' ' + row.scripts.join(' ')).toLowerCase();
+            %>
+              <tr data-uid="<%= row.uid %>" data-search="<%= searchBlob %>">
+                <td>
+                  <div class="uid-cell">
+                    <a href="/admin/whitelist/<%= row.uid %>" class="mono uid-code"><%= row.uid %></a>
+                    <button type="button" class="copy-mini" data-copy="<%= row.uid %>" title="Salin UID" aria-label="Salin UID <%= row.uid %>">
+                      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                        <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                      </svg>
+                    </button>
+                  </div>
+                </td>
+                <td>
+                  <span class="badge js-status <%= row.status === 'active' ? 'badge-active' : 'badge-banned' %>"><%= row.status %></span>
+                </td>
+                <td>
+                  <div class="chip-list">
+                    <% row.scripts.forEach(function (name) { %>
+                      <span class="chip"><%= name %></span>
+                    <% }) %>
+                  </div>
+                </td>
+                <td>
+                  <% if (row.discord_id) { %>
+                    <div class="uid-cell">
+                      <code class="mono uid-code"><%= row.discord_id %></code>
+                      <button type="button" class="copy-mini" data-copy="<%= row.discord_id %>" title="Salin Discord ID" aria-label="Salin Discord ID">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                        </svg>
+                      </button>
+                    </div>
+                  <% } else { %>
+                    <span class="muted">—</span>
+                  <% } %>
+                </td>
+                <td>
+                  <% if (row.note) { %>
+                    <span><%= row.note %></span>
+                  <% } else { %>
+                    <span class="muted">—</span>
+                  <% } %>
+                </td>
+                <td class="mono muted"><%= row.last_check_display %></td>
+                <td class="num mono"><%= row.check_count %></td>
+                <td class="col-actions">
+                  <div class="row-actions">
+                    <button type="button" class="btn btn-sm" data-open-loader-script="<%= row.scripts[0] || 'autofind' %>">Loader</button>
+                    <button class="btn btn-sm" type="button" data-action="toggle" data-uid="<%= row.uid %>" data-status="<%= row.status %>"><%= row.status === 'active' ? 'Ban' : 'Unban' %></button>
+                    <a class="btn btn-sm" href="/admin/whitelist/<%= row.uid %>">Edit</a>
+                    <button class="btn btn-sm btn-danger-ghost" type="button" data-action="delete" data-uid="<%= row.uid %>">Hapus</button>
+                  </div>
+                </td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="uid-cards" data-filterable>
+        <% rows.forEach(function (row) {
+             const searchBlob = (row.uid + ' ' + row.discord_id + ' ' + row.note + ' ' + row.scripts.join(' ')).toLowerCase();
+        %>
+          <div class="uid-card" data-uid="<%= row.uid %>" data-search="<%= searchBlob %>">
+            <div class="uid-card-head">
+              <a href="/admin/whitelist/<%= row.uid %>" class="mono uid-code"><%= row.uid %></a>
+              <span class="badge js-status <%= row.status === 'active' ? 'badge-active' : 'badge-banned' %>"><%= row.status %></span>
+            </div>
+            <div class="uid-card-scripts">
+              <% row.scripts.forEach(function (name) { %>
+                <span class="chip"><%= name %></span>
+              <% }) %>
+              <% if (row.discord_id) { %>
+                <span class="chip">DC: <%= row.discord_id %></span>
+              <% } %>
+            </div>
+            <% if (row.note) { %>
+              <p class="uid-card-note"><%= row.note %></p>
+            <% } %>
+            <div class="uid-card-meta">
+              <span>Cek: <%= row.last_check_display %></span>
+              <span class="mono"><%= row.check_count %>x</span>
+            </div>
+            <div class="uid-card-actions">
+              <button class="btn btn-sm" type="button" data-action="toggle" data-uid="<%= row.uid %>" data-status="<%= row.status %>"><%= row.status === 'active' ? 'Ban' : 'Unban' %></button>
+              <a class="btn btn-sm" href="/admin/whitelist/<%= row.uid %>">Edit</a>
+              <button class="btn btn-sm btn-danger-ghost" type="button" data-action="delete" data-uid="<%= row.uid %>">Hapus</button>
+            </div>
+          </div>
+        <% }) %>
+      </div>
+
+      <% if (pages > 1) { %>
+        <div class="pager">
+          <span>Halaman <%= page %> / <%= pages %> (<%= totalRows %> baris)</span>
+          <div class="pager-actions">
+            <% if (prevUrl) { %>
+              <a class="btn btn-sm" href="<%= prevUrl %>">← Prev</a>
+            <% } else { %>
+              <span class="btn btn-sm is-disabled">← Prev</span>
+            <% } %>
+            <% if (nextUrl) { %>
+              <a class="btn btn-sm" href="<%= nextUrl %>">Next →</a>
+            <% } else { %>
+              <span class="btn btn-sm is-disabled">Next →</span>
+            <% } %>
+          </div>
+        </div>
+      <% } %>
+    </section>
+  </main>
+</div>
+
+<!-- Modal Tambah UID -->
+<div class="modal-backdrop" id="modal-add-uid" role="dialog" aria-modal="true" aria-labelledby="add-uid-title" hidden>
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3 class="modal-title" id="add-uid-title">Tambah UID ke Whitelist</h3>
+      <button type="button" class="icon-btn" data-close-modal aria-label="Tutup">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <form method="post" action="/admin/whitelist" class="modal-body form">
+      <div class="form-grid">
+        <div class="field-group">
+          <label class="field-label" for="add-uid-input">UID Growtopia <span class="req">*</span></label>
+          <input id="add-uid-input" type="text" name="uid" class="input-control mono" inputmode="numeric" pattern="\d{1,19}" maxlength="19" placeholder="123456" required>
+          <span class="field-hint">Angka 1–19 digit (`GetLocal().userid`).</span>
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="add-discord-id">Discord User ID</label>
+          <input id="add-discord-id" type="text" name="discord_id" class="input-control mono" inputmode="numeric" pattern="\d{15,22}" maxlength="22" placeholder="412345678901234567">
+          <span class="field-hint">Opsional, untuk auto-mention &lt;@ID&gt; di webhook.</span>
+        </div>
+      </div>
+
+      <div class="field-group">
+        <label class="field-label" for="add-note-input">Catatan</label>
+        <input id="add-note-input" type="text" name="note" class="input-control" maxlength="200" placeholder="Misal: Invoice #12 / keterangan">
+      </div>
+
+      <div class="field-group">
+        <span class="field-label">Izin Script Lua <span class="req">*</span></span>
+        <% if (scripts.length === 0) { %>
+          <p class="muted">Belum ada script. <a href="/admin/scripts/new">Buat script baru</a>.</p>
+        <% } else { %>
+          <div class="script-picker-grid">
+            <% scripts.forEach(function (name, idx) { %>
+              <label class="script-check-card">
+                <input type="checkbox" name="scripts" value="<%= name %>" <%= idx === 0 ? 'checked' : '' %>>
+                <span class="script-check-name"><%= name %>.lua</span>
+              </label>
+            <% }) %>
+          </div>
+        <% } %>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn" data-close-modal>Batal</button>
+        <button type="submit" class="btn btn-primary" <%= scripts.length === 0 ? 'disabled' : '' %>>Simpan UID</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<%- include('partials/foot', { discordWebhook: discordWebhook, webhookNext: '/admin' }) %>

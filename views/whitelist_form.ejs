@@ -1,0 +1,78 @@
+<%- include('partials/head', { title: title }) %>
+<div class="app-shell">
+  <%- include('partials/nav', { admin: admin, active: 'dashboard' }) %>
+
+  <main class="main-content">
+    <%- include('partials/banner', { msg: msg, err: err }) %>
+
+    <header class="page-bar">
+      <div class="page-bar-title">
+        <h1>Edit UID <span class="mono"><%= uid %></span></h1>
+        <p class="page-bar-sub">Perbarui status akses, daftar script yang diizinkan, dan catatan untuk UID ini.</p>
+      </div>
+      <div class="page-bar-actions">
+        <a class="btn" href="/admin/logs?q=<%= encodeURIComponent(uid) %>">Log UID Ini</a>
+        <button type="button" class="btn" data-open-loader-script="<%= selected[0] || 'autofind' %>">Generator Loader</button>
+        <a class="btn" href="/admin">← Kembali</a>
+      </div>
+    </header>
+
+    <section class="metric-strip" aria-label="Statistik UID">
+      <div class="metric-item">
+        <span class="metric-label">Total Verifikasi</span>
+        <span class="metric-val"><%= check_count %></span>
+      </div>
+      <div class="metric-item">
+        <span class="metric-label">Terdaftar Sejak</span>
+        <span class="metric-val"><%= created_display %></span>
+      </div>
+      <div class="metric-item">
+        <span class="metric-label">Verifikasi Terakhir</span>
+        <span class="metric-val"><%= last_check_display %></span>
+      </div>
+    </section>
+
+    <section class="panel panel-pad">
+      <form method="post" action="/admin/whitelist/<%= uid %>" class="form">
+        <div class="form-grid">
+          <div class="field-group">
+            <label class="field-label" for="status-select">Status Akses</label>
+            <select id="status-select" name="status" class="input-control">
+              <option value="active" <%= status === 'active' ? 'selected' : '' %>>active (Diizinkan)</option>
+              <option value="banned" <%= status === 'banned' ? 'selected' : '' %>>banned (Ditolak)</option>
+            </select>
+          </div>
+
+          <div class="field-group">
+            <label class="field-label" for="discord-id-input">Discord User ID</label>
+            <input id="discord-id-input" type="text" name="discord_id" class="input-control mono" inputmode="numeric" pattern="\d{15,22}" maxlength="22" value="<%= discord_id %>" placeholder="412345678901234567">
+            <span class="field-hint">Dipakai untuk mention &lt;@ID&gt; pada log webhook Discord.</span>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label" for="note-input">Catatan</label>
+          <input id="note-input" type="text" name="note" class="input-control" maxlength="200" value="<%= note %>" placeholder="Misal: Invoice #12">
+        </div>
+
+        <div class="field-group">
+          <span class="field-label">Script Diizinkan <span class="req">*</span></span>
+          <div class="script-picker-grid">
+            <% scripts.forEach(function (name) { %>
+              <label class="script-check-card">
+                <input type="checkbox" name="scripts" value="<%= name %>" <%= selected.includes(name) ? 'checked' : '' %>>
+                <span class="script-check-name"><%= name %>.lua</span>
+              </label>
+            <% }) %>
+          </div>
+        </div>
+
+        <div class="form-actions">
+          <a class="btn" href="/admin">Batal</a>
+          <button class="btn btn-primary" type="submit">Simpan Perubahan</button>
+        </div>
+      </form>
+    </section>
+  </main>
+</div>
+<%- include('partials/foot') %>

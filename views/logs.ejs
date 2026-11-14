@@ -1,0 +1,237 @@
+<%- include('partials/head', { title: title }) %>
+<div class="app-shell">
+  <%- include('partials/nav', { admin: admin, active: 'logs' }) %>
+
+  <main class="main-content">
+    <%- include('partials/banner', { msg: msg, err: err }) %>
+
+    <header class="page-bar">
+      <div class="page-bar-title">
+        <h1>Log Aktivitas Buyer</h1>
+        <p class="page-bar-sub">Riwayat permintaan eksekusi script ke endpoint <code>GET /api/verify</code> secara kronologis.</p>
+      </div>
+      <div class="page-bar-actions">
+        <button type="button" class="btn" data-open-modal="modal-webhook">
+          <% if (typeof discordWebhook === 'string' && discordWebhook) { %>
+            <span class="status-dot"></span>
+          <% } %>
+          <span>Webhook Discord</span>
+        </button>
+        <a class="btn" href="/admin/logs">Refresh</a>
+        <% if (stats.total > 0) { %>
+          <form method="post" action="/admin/logs/clear" data-confirm-title="Bersihkan Log" data-confirm="Hapus seluruh riwayat log aktivitas buyer?">
+            <button type="submit" class="btn btn-danger-ghost">Bersihkan Log</button>
+          </form>
+        <% } %>
+      </div>
+    </header>
+
+    <section class="metric-strip" aria-label="Ringkasan log aktivitas">
+      <div class="metric-item">
+        <span class="metric-label">Total Tercatat (Maks <%= stats.max %>)</span>
+        <span class="metric-val"><%= stats.total %></span>
+      </div>
+      <div class="metric-item">
+        <span class="metric-label"><span class="status-dot"></span> Berhasil (OK)</span>
+        <span class="metric-val is-ok"><%= stats.ok %></span>
+      </div>
+      <div class="metric-item">
+        <span class="metric-label">Ditolak / Gagal</span>
+        <span class="metric-val is-danger"><%= stats.rejected %></span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="filter-bar">
+        <div class="search-field">
+          <svg class="search-ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+          </svg>
+          <input id="filter-q" type="search" placeholder="Filter UID, buyer, script, token, IP, atau status…" aria-label="Cari log aktivitas" autocomplete="off" value="<%= filters.q %>" data-filter-input>
+          <kbd class="search-kbd" aria-hidden="true">/</kbd>
+        </div>
+
+        <form method="get" action="/admin/logs" class="filter-bar-inner">
+          <input type="hidden" name="q" value="<%= filters.q %>" data-filter-mirror>
+          <select id="filter-status" name="status" class="select-glass" aria-label="Filter status">
+            <option value="semua" <%= filters.status === 'semua' ? 'selected' : '' %>>Semua Hasil</option>
+            <option value="ok" <%= filters.status === 'ok' ? 'selected' : '' %>>OK (Berhasil)</option>
+            <option value="rejected" <%= filters.status === 'rejected' ? 'selected' : '' %>>Ditolak / Error</option>
+          </select>
+
+          <select id="filter-script" name="script" class="select-glass" aria-label="Filter script">
+            <option value="semua" <%= filters.script === 'semua' ? 'selected' : '' %>>Semua Script</option>
+            <% scripts.forEach(function (name) { %>
+              <option value="<%= name %>" <%= filters.script === name ? 'selected' : '' %>><%= name %>.lua</option>
+            <% }) %>
+          </select>
+
+          <button class="btn" type="submit">Filter</button>
+          <% if (filters.q || filters.status !== 'semua' || filters.script !== 'semua') { %>
+            <a class="btn btn-ghost" href="/admin/logs">Reset</a>
+          <% } %>
+        </form>
+
+        <span class="pill-counter" id="row-count"><%= totalRows %> baris</span>
+      </div>
+
+      <div class="empty-filter-msg" data-filter-empty hidden>
+        <div class="empty-state">
+          <p>Tidak ada baris yang cocok dengan pencarian.</p>
+        </div>
+      </div>
+
+      <div class="table-scroll">
+        <table class="table uid-table" data-filterable>
+          <thead>
+            <tr>
+              <th>Waktu (UTC)</th>
+              <th>Status</th>
+              <th>UID &amp; Buyer</th>
+              <th>Script</th>
+              <th>Kredensial</th>
+              <th>IP</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% if (rows.length === 0) { %>
+              <tr>
+                <td colspan="6">
+                  <div class="empty-state">
+                    <h3>Belum ada aktivitas terekam</h3>
+                    <p>Permintaan verifikasi dari loader CGT akan langsung tercatat di sini.</p>
+                  </div>
+                </td>
+              </tr>
+            <% } %>
+            <% rows.forEach(function (row) {
+                 const searchBlob = (
+                   row.uid + ' ' +
+                   row.char_name + ' ' +
+                   row.discord_id + ' ' +
+                   row.buyer_note + ' ' +
+                   row.script + ' ' +
+                   row.token_label + ' ' +
+                   row.token_id + ' ' +
+                   row.ip + ' ' +
+                   row.result + ' ' +
+                   row.result_label
+                 ).toLowerCase();
+            %>
+              <tr data-search="<%= searchBlob %>">
+                <td class="mono muted"><%= row.at_display %></td>
+                <td>
+                  <span class="badge <%= row.is_ok ? 'badge-active' : 'badge-banned' %>"><%= row.result_label %></span>
+                </td>
+                <td>
+                  <% if (row.uid) { %>
+                    <div class="uid-cell">
+                      <% if (row.in_whitelist) { %>
+                        <a href="/admin/whitelist/<%= row.uid %>" class="mono uid-code"><%= row.uid %></a>
+                      <% } else { %>
+                        <code class="mono uid-code"><%= row.uid %></code>
+                      <% } %>
+                      <% if (row.char_name) { %>
+                        <span class="chip"><%= row.char_name %></span>
+                      <% } %>
+                      <button type="button" class="copy-mini" data-copy="<%= row.uid %>" title="Salin UID" aria-label="Salin UID">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                          <rect x="9" y="9" width="13" height="13" rx="2" ry="2"/>
+                          <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/>
+                        </svg>
+                      </button>
+                    </div>
+                    <% if (row.discord_id) { %>
+                      <div class="sub mono">DC: <%= row.discord_id %><% if (row.buyer_note) { %> · <%= row.buyer_note %><% } %></div>
+                    <% } else if (row.buyer_note) { %>
+                      <div class="sub"><%= row.buyer_note %></div>
+                    <% } else if (!row.in_whitelist) { %>
+                      <div class="sub">Tidak di whitelist</div>
+                    <% } %>
+                  <% } else { %>
+                    <span class="muted">—</span>
+                  <% } %>
+                </td>
+                <td>
+                  <% if (row.script) { %>
+                    <span class="chip"><%= row.script %>.lua</span>
+                  <% } else { %>
+                    <span class="muted">—</span>
+                  <% } %>
+                </td>
+                <td>
+                  <% if (row.via === 'token') { %>
+                    <% if (row.token_label) { %>
+                      <span><%= row.token_label %></span>
+                      <% if (row.token_id) { %>
+                        <span class="muted mono"> #<%= row.token_id.slice(0, 8) %></span>
+                      <% } %>
+                    <% } else if (row.token_id) { %>
+                      <span class="mono">#<%= row.token_id.slice(0, 8) %></span>
+                    <% } else { %>
+                      <span class="muted">Token Invalid</span>
+                    <% } %>
+                  <% } else { %>
+                    <span class="badge badge-warn">Legacy Secret</span>
+                  <% } %>
+                </td>
+                <td class="mono muted"><%= row.ip %></td>
+              </tr>
+            <% }) %>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="uid-cards" data-filterable>
+        <% rows.forEach(function (row) {
+             const searchBlob = (
+               row.uid + ' ' +
+               row.char_name + ' ' +
+               row.discord_id + ' ' +
+               row.buyer_note + ' ' +
+               row.script + ' ' +
+               row.token_label + ' ' +
+               row.token_id + ' ' +
+               row.ip + ' ' +
+               row.result + ' ' +
+               row.result_label
+             ).toLowerCase();
+        %>
+          <div class="uid-card" data-search="<%= searchBlob %>">
+            <div class="uid-card-head">
+              <code class="mono uid-code"><%= row.uid || '—' %><% if (row.char_name) { %> · <%= row.char_name %><% } %></code>
+              <span class="badge <%= row.is_ok ? 'badge-active' : 'badge-banned' %>"><%= row.result_label %></span>
+            </div>
+            <div class="uid-card-scripts">
+              <% if (row.script) { %><span class="chip"><%= row.script %>.lua</span><% } %>
+              <% if (row.token_label) { %><span class="chip"><%= row.token_label %></span><% } %>
+            </div>
+            <div class="uid-card-meta">
+              <span class="mono"><%= row.at_display %></span>
+              <span class="mono"><%= row.ip %></span>
+            </div>
+          </div>
+        <% }) %>
+      </div>
+
+      <% if (pages > 1) { %>
+        <div class="pager">
+          <span>Halaman <%= page %> / <%= pages %> (<%= totalRows %> log)</span>
+          <div class="pager-actions">
+            <% if (prevUrl) { %>
+              <a class="btn btn-sm" href="<%= prevUrl %>">← Prev</a>
+            <% } else { %>
+              <span class="btn btn-sm is-disabled">← Prev</span>
+            <% } %>
+            <% if (nextUrl) { %>
+              <a class="btn btn-sm" href="<%= nextUrl %>">Next →</a>
+            <% } else { %>
+              <span class="btn btn-sm is-disabled">Next →</span>
+            <% } %>
+          </div>
+        </div>
+      <% } %>
+    </section>
+  </main>
+</div>
+<%- include('partials/foot', { discordWebhook: discordWebhook, webhookNext: '/admin/logs' }) %>

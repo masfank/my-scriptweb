@@ -1,0 +1,235 @@
+'use strict';
+
+/**
+ * controllers/verifyController.js — endpoint buyer.
+ * Semua hasil bisnis = HTTP 200 text/plain: source Lua, atau ERROR:<alasan>.
+ * Urutan cek mengikat: kredensial → format → lookup → status → bottom-4 UID →
+ * script → file → lock UID.
+ *
+ * Kredensial:
+ *   X-Buyer-Token: <token per buyer>   ← utama, mengunci ke satu UID
+ *   X-App-Secret:  <secret global>     ← warisan, tidak mengunci UID
+ */
+
+const store = require('../db/store');
+const safeEqual = require('../middleware/safeEqual');
+const asyncHandler = require('../middleware/asyncHandler');
+const discordWebhook = require('../utils/discordWebhook');
+
+const UID_RE = /^\d{1,19}$/;
+
+/* UID yang boleh diterima kalau token belum terkunci: 4 digit atau lebih.
+ * UID 1-3 digit khas ID internal (tester/staff) dan gampang ditebak. */
+const MIN_FIRST_LOCK_DIGITS = 4;
+
+function clientIp(req) {
+  return String(req.ip || '').replace(/^::ffff:/, '');
+}
+
+function cleanCharName(raw) {
+  if (typeof raw !== 'string') return '';
+  return raw
+    .replace(/`./g, '')
+    .replace(/[\r\n\t]+/g, ' ')
+    .trim()
+    .slice(0, 64);
+}
+
+function logResult(uid, script, result, via) {
+  console.log(`[verify] via=${via || '-'} uid=${uid || '-'} script=${script || '-'} result=${result}`);
+}
+
+function tokenAllowedUids(token) {
+  if (!token) return [];
+  if (Array.isArray(token.uids) && token.uids.length > 0) {
+    return token.uids.map(String);
+  }
+  if (token.uid !== null && token.uid !== undefined && String(token.uid) !== '') {
+    return [String(token.uid)];
+  }
+  return [];
+}
+
+async function emitFailure(req, { uid, charName, script, result, via, token, webhookUrl, discordId }) {
+  logResult(uid, script, result, via);
+  const ip = clientIp(req);
+  const at = new Date().toISOString();
+  try {
+    await store.recordLog({
+      at,
+      uid,
+      char_name: charName || '',
+      script,
+      result,
+      via,
+      token_id: token ? token.id : '',
+      token_label: token ? token.label : '',
+      ip,
+    });
+  } catch (err) {
+    console.warn('[verify] gagal simpan log:', err.message);
+  }
+  if (result !== 'invalid_secret' && result !== 'bad_request') {
+    discordWebhook.sendVerifyLog(webhookUrl, {
+      at,
+      uid,
+      char_name: charName || '',
+      script,
+      result,
+      via,
+      token_label: token ? token.label : '',
+      discord_id: discordId || '',
+      ip,
+    });
+  }
+}
+
+function uidAllowed(entry, uid) {
+  if (Array.isArray(entry.allowed_uids) && entry.allowed_uids.length > 0) {
+    return entry.allowed_uids.includes(uid);
+  }
+  return UID_RE.test(uid) && uid.length >= MIN_FIRST_LOCK_DIGITS;
+}
+
+exports.verify = asyncHandler(async (req, res) => {
+  res.type('text/plain');
+  res.set('Cache-Control', 'no-store');
+
+  const data = await store.read();
+
+  const rawToken = req.get('x-buyer-token');
+  const token = rawToken ? store.findToken(data, rawToken) : null;
+  const via = token ? 'token' : 'secret';
+  const webhookUrl = data.settings.discord_webhook || process.env.DISCORD_WEBHOOK_URL || '';
+  const charName = cleanCharName(req.query.name);
+
+  if (!token) {
+    const secret = data.settings.app_secret || process.env.APP_SECRET || '';
+    const provided = req.get('x-app-secret');
+    if (!secret || !safeEqual(provided, secret)) {
+      await emitFailure(req, {
+        uid: req.query.uid,
+        charName,
+        script: req.query.script,
+        result: 'invalid_secret',
+        via: rawToken ? 'token' : 'secret',
+        token: null,
+        webhookUrl,
+      });
+      return res.send('ERROR:invalid_secret');
+    }
+  }
+
+  const uid = typeof req.query.uid === 'string' ? req.query.uid.trim() : '';
+  const script = typeof req.query.script === 'string' ? req.query.script.trim() : '';
+
+  if (!UID_RE.test(uid) || !store.isSafeName(script)) {
+    await emitFailure(req, { uid, charName, script, result: 'bad_request', via, token, webhookUrl });
+    return res.send('ERROR:bad_request');
+  }
+
+  const entry = data.whitelist[uid];
+  const discordId = (entry && entry.discord_id) || '';
+  if (!entry) {
+    await emitFailure(req, { uid, charName, script, result: 'not_found', via, token, webhookUrl, discordId });
+    return res.send('ERROR:not_found');
+  }
+  if (entry.status !== 'active') {
+    await emitFailure(req, { uid, charName, script, result: 'banned', via, token, webhookUrl, discordId });
+    return res.send('ERROR:banned');
+  }
+
+  /* token sudah terkunci ke UID lain: tolak sebelum menyentuh script/file */
+  const allowedUids = tokenAllowedUids(token);
+  if (token && allowedUids.length > 0 && !allowedUids.includes(uid)) {
+    await emitFailure(req, { uid, charName, script, result: 'uid_locked', via, token, webhookUrl, discordId });
+    return res.send('ERROR:uid_locked');
+  }
+  if (token && allowedUids.length === 0 && !uidAllowed(entry, uid)) {
+    await emitFailure(req, { uid, charName, script, result: 'uid_not_allowed', via, token, webhookUrl, discordId });
+    return res.send('ERROR:uid_not_allowed');
+  }
+
+  if (!entry.scripts.includes(script)) {
+    await emitFailure(req, { uid, charName, script, result: 'script_mismatch', via, token, webhookUrl, discordId });
+    return res.send('ERROR:script_mismatch');
+  }
+
+  const source = await store.readScript(script);
+  if (source === null) {
+    await emitFailure(req, { uid, charName, script, result: 'script_missing', via, token, webhookUrl, discordId });
+    return res.send('ERROR:script_missing');
+  }
+
+  /* statistik + lock UID + log aktivitas ditulis bersamaan; pada verdict direvalidasi ulang */
+  let verdict = 'ok';
+  let liveDiscordId = discordId;
+  const ip = clientIp(req);
+  const now = new Date().toISOString();
+  await store.update((db) => {
+    const current = db.whitelist[uid];
+    if (current && current.discord_id) liveDiscordId = current.discord_id;
+    if (!current) {
+      verdict = 'not_found';
+    } else if (current.status !== 'active') {
+      verdict = 'banned';
+    } else if (token) {
+      const live = db.tokens[token.id];
+      const liveAllowed = tokenAllowedUids(live);
+      if (!live || live.active !== true) {
+        verdict = 'token_revoked';
+      } else if (liveAllowed.length > 0 && !liveAllowed.includes(uid)) {
+        verdict = 'uid_locked';
+      } else {
+        if (liveAllowed.length === 0) {
+          live.uid = uid;
+          live.uids = [uid];
+          live.locked_at = now;
+        }
+        live.last_used = now;
+        live.use_count = (live.use_count || 0) + 1;
+      }
+    }
+
+    if (verdict === 'ok' && current) {
+      current.last_check = now;
+      current.check_count = (current.check_count || 0) + 1;
+    }
+  });
+
+  try {
+    await store.recordLog({
+      at: now,
+      uid,
+      char_name: charName,
+      script,
+      result: verdict,
+      via,
+      token_id: token ? token.id : '',
+      token_label: token ? token.label : '',
+      ip,
+    });
+  } catch (err) {
+    console.warn('[verify] gagal simpan log:', err.message);
+  }
+
+  discordWebhook.sendVerifyLog(webhookUrl, {
+    at: now,
+    uid,
+    char_name: charName,
+    script,
+    result: verdict,
+    via,
+    token_label: token ? token.label : '',
+    discord_id: liveDiscordId,
+    ip,
+  });
+
+  if (verdict !== 'ok') {
+    logResult(uid, script, verdict, via);
+    return res.send(`ERROR:${verdict}`);
+  }
+
+  logResult(uid, script, 'ok', via);
+  return res.send(source);
+});

@@ -1,0 +1,35 @@
+<%- include('partials/head', { title: title }) %>
+<main class="auth-shell">
+  <div class="auth-card">
+    <div class="auth-head">
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">LU</span>
+        <span>Lisensi UID</span>
+        <span class="brand-tag">Admin</span>
+      </div>
+      <h1>Masuk ke Panel</h1>
+      <p>Gunakan akun administrator untuk mengelola lisensi.</p>
+    </div>
+
+    <%- include('partials/banner', { msg: null, err: err }) %>
+
+    <form method="post" action="/login" class="form">
+      <input type="hidden" name="_csrf" value="<%= typeof csrfToken !== 'undefined' ? csrfToken : '' %>">
+      <input type="hidden" name="next" value="<%= next %>">
+      <div class="field-group">
+        <label class="field-label" for="username">Username</label>
+        <input id="username" type="text" name="username" class="input-control" autocomplete="username" autofocus required>
+      </div>
+
+      <div class="field-group">
+        <label class="field-label" for="password">Password</label>
+        <input id="password" type="password" name="password" class="input-control" autocomplete="current-password" required>
+      </div>
+
+      <button class="btn btn-primary btn-block" type="submit">Masuk</button>
+    </form>
+  </div>
+</main>
+<script src="/js/admin.js?v=16" defer></script>
+</body>
+</html>
