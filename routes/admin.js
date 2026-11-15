@@ -2,6 +2,7 @@
 
 const express = require('express');
 const requireAdmin = require('../middleware/requireAdmin');
+const requireOwner = require('../middleware/requireOwner');
 const verifyCsrf = require('../middleware/verifyCsrf');
 const store = require('../db/store');
 
@@ -10,6 +11,8 @@ const scripts = require('../controllers/scriptController');
 const settings = require('../controllers/settingsController');
 const tokens = require('../controllers/tokenController');
 const logs = require('../controllers/logController');
+const users = require('../controllers/userController');
+const backup = require('../controllers/backupController');
 
 const router = express.Router();
 
@@ -66,15 +69,15 @@ router.post('/whitelist/:uid', validateUid, whitelist.update);
 router.post('/whitelist/:uid/toggle', validateUid, whitelist.toggle);
 router.post('/whitelist/:uid/delete', validateUid, whitelist.remove);
 
-/* /scripts/new, /scripts/export, /scripts/import HARUS sebelum /scripts/:name */
-router.get('/scripts', scripts.list);
-router.get('/scripts/export', scripts.exportData);
-router.post('/scripts/import', scripts.importData);
-router.get('/scripts/new', scripts.newForm);
-router.post('/scripts', scripts.saveNew);
-router.get('/scripts/:name', validateName, scripts.editForm);
-router.post('/scripts/:name', validateName, scripts.update);
-router.post('/scripts/:name/delete', validateName, scripts.remove);
+/* /scripts/new, /scripts/export, /scripts/import HARUS sebelum /scripts/:name (khusus Admin) */
+router.get('/scripts', requireOwner, scripts.list);
+router.get('/scripts/export', requireOwner, scripts.exportData);
+router.post('/scripts/import', requireOwner, scripts.importData);
+router.get('/scripts/new', requireOwner, scripts.newForm);
+router.post('/scripts', requireOwner, scripts.saveNew);
+router.get('/scripts/:name', requireOwner, validateName, scripts.editForm);
+router.post('/scripts/:name', requireOwner, validateName, scripts.update);
+router.post('/scripts/:name/delete', requireOwner, validateName, scripts.remove);
 
 /* token buyer: dibuat di sini, dikirim ke loader sebagai X-Buyer-Token */
 router.get('/tokens', tokens.list);
@@ -84,18 +87,29 @@ router.get('/tokens/new/fresh', tokens.consumeFresh);
 router.post('/tokens', tokens.create);
 router.post('/tokens/:id/toggle', tokens.toggle);
 router.post('/tokens/:id/unlock', tokens.unlock);
+router.post('/tokens/:id/uids', tokens.updateUids);
 router.post('/tokens/:id/rotate', tokens.rotate);
 router.post('/tokens/:id/delete', tokens.remove);
 
-router.get('/secret', settings.show);
-router.post('/secret/rotate', settings.rotate);
+router.get('/secret', requireOwner, settings.show);
+router.post('/secret/rotate', requireOwner, settings.rotate);
 
-/* webhook discord untuk history eksekusi buyer */
-router.post('/webhook', settings.saveWebhook);
-router.post('/webhook/test', settings.testWebhook);
+/* kelola akun admin & leader (khusus Admin) */
+router.get('/users', requireOwner, users.list);
+router.post('/users', requireOwner, users.create);
+router.post('/users/:username/password', requireOwner, users.resetPassword);
+router.post('/users/:username/delete', requireOwner, users.remove);
+
+/* universal backup export & import semua data (khusus Admin) */
+router.get('/backup/export', requireOwner, backup.exportAll);
+router.post('/backup/import', requireOwner, backup.importAll);
+
+/* webhook discord untuk history eksekusi buyer (khusus Admin) */
+router.post('/webhook', requireOwner, settings.saveWebhook);
+router.post('/webhook/test', requireOwner, settings.testWebhook);
 
 /* riwayat log eksekusi script buyer */
 router.get('/logs', logs.list);
-router.post('/logs/clear', logs.clear);
+router.post('/logs/clear', requireOwner, logs.clear);
 
 module.exports = router;

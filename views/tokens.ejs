@@ -113,6 +113,13 @@
                       data-open-loader-script="<%= row.bundle || (scripts[0] || 'autofind') %>"
                       data-open-loader-token="<%= row.raw || (typeof fresh !== 'undefined' && fresh && fresh.id === row.id ? fresh.raw : '') %>"
                     >Ambil Script</button>
+                    <button
+                      class="btn btn-sm"
+                      type="button"
+                      data-edit-token-uids="<%= row.id %>"
+                      data-token-label="<%= row.label %>"
+                      data-token-uids="<%= row.uids.join(',') %>"
+                    >Edit UID</button>
                     <button class="btn btn-sm" type="button" data-action="token-unlock" data-id="<%= row.id %>" <%= row.locked ? '' : 'disabled' %>>Unlock</button>
                     <button class="btn btn-sm" type="button" data-action="token-toggle" data-id="<%= row.id %>"><%= row.active ? 'Revoke' : 'Aktifkan' %></button>
                     <button class="btn btn-sm btn-danger-ghost" type="button" data-action="token-delete" data-id="<%= row.id %>">Hapus</button>
@@ -145,6 +152,13 @@
                 data-open-loader-script="<%= row.bundle || (scripts[0] || 'autofind') %>"
                 data-open-loader-token="<%= row.raw || (typeof fresh !== 'undefined' && fresh && fresh.id === row.id ? fresh.raw : '') %>"
               >Ambil Script</button>
+              <button
+                class="btn btn-sm"
+                type="button"
+                data-edit-token-uids="<%= row.id %>"
+                data-token-label="<%= row.label %>"
+                data-token-uids="<%= row.uids.join(',') %>"
+              >Edit UID</button>
               <button class="btn btn-sm" type="button" data-action="token-unlock" data-id="<%= row.id %>" <%= row.locked ? '' : 'disabled' %>>Unlock</button>
               <button class="btn btn-sm" type="button" data-action="token-toggle" data-id="<%= row.id %>"><%= row.active ? 'Revoke' : 'Aktifkan' %></button>
               <button class="btn btn-sm btn-danger-ghost" type="button" data-action="token-delete" data-id="<%= row.id %>">Hapus</button>
@@ -220,6 +234,54 @@
       <div class="modal-actions">
         <button type="button" class="btn" data-close-modal>Batal</button>
         <button class="btn btn-primary" type="submit">Buat Token</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal Edit UID Token -->
+<div class="modal-backdrop" id="modal-edit-token-uids" role="dialog" aria-modal="true" aria-labelledby="edit-token-uids-title" hidden>
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3 class="modal-title" id="edit-token-uids-title">Edit UID Token</h3>
+      <button type="button" class="icon-btn" data-close-modal aria-label="Tutup">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+
+    <form method="post" action="/admin/tokens" id="form-edit-token-uids" class="modal-body form">
+      <div class="field-group">
+        <span class="field-label" id="edit-token-uids-owner">Pilih UID Whitelist untuk token ini (token buyer tetap sama)</span>
+        <div class="uid-picker-box">
+          <div class="uid-picker-toolbar">
+            <input id="edit-token-uid-search" type="search" class="input-control" placeholder="Cari UID, catatan, atau Discord ID…" autocomplete="off">
+            <span class="pill-counter" id="edit-token-uid-count">0 dipilih (auto-lock)</span>
+            <button type="button" class="btn btn-sm" id="edit-token-uid-clear">Kosongkan</button>
+          </div>
+          <% if (typeof whitelistOptions === 'undefined' || whitelistOptions.length === 0) { %>
+            <div class="uid-picker-empty muted">Belum ada UID di whitelist.</div>
+          <% } else { %>
+            <div class="uid-picker-list" id="edit-token-uid-list">
+              <% whitelistOptions.forEach(function (w) { %>
+                <label class="uid-pick-item" data-search="<%= (w.uid + ' ' + w.note + ' ' + w.discord_id).toLowerCase() %>">
+                  <input type="checkbox" name="uids" value="<%= w.uid %>" data-edit-uid-pick>
+                  <span class="uid-pick-main">
+                    <span class="mono uid-pick-id"><%= w.uid %></span>
+                    <% if (w.note) { %><span class="uid-pick-note"><%= w.note %></span><% } %>
+                    <% if (w.discord_id) { %><span class="mono uid-pick-dc">DC: <%= w.discord_id %></span><% } %>
+                  </span>
+                  <span class="badge badge-<%= w.status === 'active' ? 'active' : 'banned' %>"><%= w.status %></span>
+                </label>
+              <% }); %>
+            </div>
+          <% } %>
+        </div>
+        <span class="field-hint">Centang semua UID yang boleh memakai token ini. Kosongkan semua = auto-lock ke UID pertama.</span>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn" data-close-modal>Batal</button>
+        <button type="submit" class="btn btn-primary">Simpan UID</button>
       </div>
     </form>
   </div>

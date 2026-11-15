@@ -1,0 +1,163 @@
+<%- include('partials/head', { title: title }) %>
+<div class="app-shell">
+  <%- include('partials/nav', { admin: admin, active: 'users' }) %>
+
+  <main class="main-content">
+    <%- include('partials/banner', { msg: msg, err: err }) %>
+
+    <header class="page-bar">
+      <div class="page-bar-title">
+        <h1>Kelola Tim</h1>
+        <p class="page-bar-sub">Tambahkan akun untuk teman / Leader agar bisa mengelola Whitelist UID, Token Buyer, dan Log tanpa akses ke source Lua atau App Secret.</p>
+      </div>
+      <div class="page-bar-actions">
+        <button type="button" class="btn btn-primary" data-open-modal="modal-add-user">+ Tambah Akun</button>
+      </div>
+    </header>
+
+    <section class="metric-strip" aria-label="Ringkasan tim">
+      <div class="metric-item">
+        <span class="metric-label">Total Akun</span>
+        <span class="metric-val"><%= rows.length %></span>
+      </div>
+      <div class="metric-item">
+        <span class="metric-label">Admin</span>
+        <span class="metric-val"><%= rows.filter(function(r){ return r.role === 'admin'; }).length %></span>
+      </div>
+      <div class="metric-item">
+        <span class="metric-label"><span class="status-dot"></span> Leader</span>
+        <span class="metric-val is-ok"><%= rows.filter(function(r){ return r.role === 'leader'; }).length %></span>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="table-scroll">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Username</th>
+              <th>Role</th>
+              <th>Hak Akses</th>
+              <th>Dibuat</th>
+              <th class="col-actions">Aksi</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% rows.forEach(function (row) { %>
+              <tr>
+                <td>
+                  <strong class="mono"><%= row.username %></strong>
+                  <% if (row.isSelf) { %><span class="chip">Kamu</span><% } %>
+                </td>
+                <td>
+                  <span class="badge badge-<%= row.role === 'admin' ? 'active' : 'muted' %>"><%= row.role %></span>
+                </td>
+                <td class="muted">
+                  <%= row.role === 'admin' ? 'Penuh (Whitelist, Token, Scripts, Secret, Tim)' : 'Whitelist UID, Token Buyer, Log, Loader' %>
+                </td>
+                <td class="mono muted"><%= row.created_at_display %></td>
+                <td class="col-actions">
+                  <div class="row-actions">
+                    <button
+                      type="button"
+                      class="btn btn-sm"
+                      data-reset-user-pass="<%= row.username %>"
+                    >Reset Password</button>
+                    <% if (!row.isSelf) { %>
+                      <form method="post" action="/admin/users/<%= encodeURIComponent(row.username) %>/delete" data-confirm="Hapus akun '<%= row.username %>'? Sesi loginnya akan langsung berakhir." data-confirm-title="Hapus Akun">
+                        <button class="btn btn-sm btn-danger-ghost" type="submit">Hapus</button>
+                      </form>
+                    <% } %>
+                  </div>
+                </td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="uid-cards">
+        <% rows.forEach(function (row) { %>
+          <div class="uid-card">
+            <div class="uid-card-head">
+              <strong class="mono"><%= row.username %> <% if (row.isSelf) { %>(Kamu)<% } %></strong>
+              <span class="badge badge-<%= row.role === 'admin' ? 'active' : 'muted' %>"><%= row.role %></span>
+            </div>
+            <div class="uid-card-meta">
+              <span><%= row.role === 'admin' ? 'Akses penuh' : 'Whitelist, Token, Log, Loader' %></span>
+              <span class="mono"><%= row.created_at_display %></span>
+            </div>
+            <div class="uid-card-actions">
+              <button type="button" class="btn btn-sm" data-reset-user-pass="<%= row.username %>">Reset Password</button>
+              <% if (!row.isSelf) { %>
+                <form method="post" action="/admin/users/<%= encodeURIComponent(row.username) %>/delete" data-confirm="Hapus akun '<%= row.username %>'?">
+                  <button class="btn btn-sm btn-danger-ghost" type="submit">Hapus</button>
+                </form>
+              <% } %>
+            </div>
+          </div>
+        <% }); %>
+      </div>
+    </section>
+  </main>
+</div>
+
+<!-- Modal Tambah Akun -->
+<div class="modal-backdrop" id="modal-add-user" role="dialog" aria-modal="true" aria-labelledby="add-user-title" hidden>
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3 class="modal-title" id="add-user-title">Tambah Akun Tim</h3>
+      <button type="button" class="icon-btn" data-close-modal aria-label="Tutup">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <form method="post" action="/admin/users" class="modal-body form">
+      <div class="form-grid">
+        <div class="field-group">
+          <label class="field-label" for="new-user-name">Username <span class="req">*</span></label>
+          <input id="new-user-name" type="text" name="username" class="input-control mono" minlength="3" maxlength="32" pattern="[A-Za-z0-9_.-]{3,32}" placeholder="leader_budi" required>
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="new-user-role">Role <span class="req">*</span></label>
+          <select id="new-user-role" name="role" class="input-control">
+            <option value="leader" selected>Leader (Whitelist, Token, Log, Loader)</option>
+            <option value="admin">Admin (Akses Penuh)</option>
+          </select>
+        </div>
+      </div>
+      <div class="field-group">
+        <label class="field-label" for="new-user-pass">Password <span class="req">*</span></label>
+        <input id="new-user-pass" type="password" name="password" class="input-control" minlength="6" placeholder="Minimal 6 karakter" required>
+      </div>
+      <span class="field-hint">Role <strong>Leader</strong> bisa menambah/mengedit UID buyer, token, dan melihat log, tapi tidak bisa melihat/mengubah source script Lua, App Secret, Webhook, atau akun tim.</span>
+      <div class="modal-actions">
+        <button type="button" class="btn" data-close-modal>Batal</button>
+        <button type="submit" class="btn btn-primary">Buat Akun</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Modal Reset Password -->
+<div class="modal-backdrop" id="modal-reset-pass" role="dialog" aria-modal="true" aria-labelledby="reset-pass-title" hidden>
+  <div class="modal-card modal-card-sm">
+    <div class="modal-head">
+      <h3 class="modal-title" id="reset-pass-title">Reset Password</h3>
+      <button type="button" class="icon-btn" data-close-modal aria-label="Tutup">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <form method="post" action="/admin/users" id="form-reset-pass" class="modal-body form">
+      <div class="field-group">
+        <label class="field-label" for="reset-pass-input" id="reset-pass-label">Password Baru <span class="req">*</span></label>
+        <input id="reset-pass-input" type="password" name="password" class="input-control" minlength="6" placeholder="Minimal 6 karakter" required>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn" data-close-modal>Batal</button>
+        <button type="submit" class="btn btn-primary">Simpan Password</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<%- include('partials/foot') %>

@@ -48,6 +48,7 @@ exports.setup = asyncHandler(async (req, res) => {
       db.admins[username] = {
         password_hash: passwordHash,
         api_token: apiToken,
+        role: 'admin',
         created_at: new Date().toISOString(),
       };
     });

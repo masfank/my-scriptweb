@@ -219,6 +219,37 @@ exports.unlock = asyncHandler(async (req, res) => {
   return res.json({ ok: true, unlocked_from: unlockedFrom });
 });
 
+exports.updateUids = asyncHandler(async (req, res) => {
+  const id = req.params.id;
+  const rawUids = Array.isArray(req.body.uids)
+    ? req.body.uids
+    : typeof req.body.uids === 'string' && req.body.uids.trim()
+      ? [req.body.uids]
+      : [];
+  const uids = Array.from(new Set(rawUids.map((u) => String(u).trim()).filter(Boolean)));
+  const back = (key, message) => res.redirect(`/admin/tokens?${key}=` + encodeURIComponent(message));
+
+  const invalidUid = uids.find((u) => !UID_RE.test(u));
+  if (invalidUid) return back('err', `UID tidak valid: ${invalidUid}`);
+
+  const data = await store.read();
+  if (!data.tokens[id]) return back('err', 'Token tidak ditemukan');
+  const missingUid = uids.find((u) => !data.whitelist[u]);
+  if (missingUid) return back('err', `UID ${missingUid} belum ada di whitelist — tambahkan dulu`);
+
+  const now = new Date().toISOString();
+  await store.update((db) => {
+    const token = db.tokens[id];
+    if (!token) throw new store.StoreError('not_found');
+    token.uid = uids[0] || null;
+    token.uids = uids;
+    token.locked_at = uids.length > 0 ? (token.locked_at || now) : null;
+  });
+
+  const summary = uids.length > 0 ? `dikunci ke ${uids.length} UID (${uids.join(', ')})` : 'diatur ke auto-lock';
+  return back('ok', `UID token diperbarui: ${summary}. Token tetap sama.`);
+});
+
 exports.rotate = asyncHandler(async (req, res) => {
   const id = req.params.id;
   const created = store.newToken();

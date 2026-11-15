@@ -22,7 +22,7 @@ module.exports = async function requireAdmin(req, res, next) {
       const data = await store.read();
       for (const [username, admin] of Object.entries(data.admins)) {
         if (safeEqual(token, admin.api_token)) {
-          req.admin = { username };
+          req.admin = { username, role: admin.role || 'admin' };
           req.adminViaBearer = true;
           return next();
         }
@@ -30,8 +30,14 @@ module.exports = async function requireAdmin(req, res, next) {
     }
 
     if (req.session && req.session.admin && req.session.admin.username) {
-      req.admin = { username: req.session.admin.username };
-      return next();
+      const data = await store.read();
+      const liveAdmin = data.admins[req.session.admin.username];
+      if (!liveAdmin) {
+        req.session = null;
+      } else {
+        req.admin = { username: req.session.admin.username, role: liveAdmin.role || 'admin' };
+        return next();
+      }
     }
 
     if (req.accepts(['html', 'json']) === 'json') {

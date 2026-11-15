@@ -109,6 +109,51 @@
 </div>
 <% } %>
 
-<script src="/js/admin.js?v=21" defer></script>
+<% if (typeof admin !== 'undefined' && admin && admin.role !== 'leader') { %>
+<!-- Modal Universal Backup / Migrasi -->
+<div class="modal-backdrop" id="modal-universal-backup" role="dialog" aria-modal="true" aria-labelledby="universal-backup-title" hidden>
+  <div class="modal-card">
+    <div class="modal-head">
+      <h3 class="modal-title" id="universal-backup-title">Backup &amp; Migrasi Universal</h3>
+      <button type="button" class="icon-btn" data-close-modal aria-label="Tutup">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18M6 6l12 12"/></svg>
+      </button>
+    </div>
+    <div class="modal-body form">
+      <div class="field-group">
+        <span class="field-label">1. Export Semua Data (1 File JSON)</span>
+        <span class="field-hint">Mengunduh semua Whitelist UID, Token Buyer, Script Lua, dan pengaturan webhook/secret sekaligus.</span>
+        <div>
+          <a class="btn btn-primary" href="/admin/backup/export">Download Full Backup (.json)</a>
+        </div>
+      </div>
+
+      <form method="post" action="/admin/backup/import" class="form">
+        <div class="field-group">
+          <label class="field-label" for="universal-import-file">2. Import / Pulihkan Semua Data</label>
+          <input id="universal-import-file" type="file" accept=".json,application/json" class="input-control" data-import-file>
+        </div>
+        <div class="field-group">
+          <textarea name="payload" class="input-control mono" rows="5" placeholder="Pilih file backup .json di atas atau tempel JSON di sini..." required data-import-payload></textarea>
+        </div>
+        <label class="uid-pick-item">
+          <input type="checkbox" name="overwrite" value="1">
+          <span class="uid-pick-main"><span class="uid-pick-note">Timpa data jika UID / ID token / nama script sudah ada</span></span>
+        </label>
+        <label class="uid-pick-item">
+          <input type="checkbox" name="include_settings" value="1" checked>
+          <span class="uid-pick-main"><span class="uid-pick-note">Ikut pulihkan Webhook Discord &amp; App Secret</span></span>
+        </label>
+        <div class="modal-actions">
+          <button type="button" class="btn" data-close-modal>Tutup</button>
+          <button type="submit" class="btn btn-primary">Import Semua Data</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+<% } %>
+
+<script src="/js/admin.js?v=23" defer></script>
 </body>
 </html>

@@ -722,42 +722,111 @@ if (genRotateBtn) {
 }
 
 /* ------------------------------------------- Whitelist UID Multi-Picker */
-const tokenUidSearch = document.getElementById('token-uid-search');
-const tokenUidList = document.getElementById('token-uid-list');
-const tokenUidCount = document.getElementById('token-uid-count');
-const tokenUidClear = document.getElementById('token-uid-clear');
+function initUidPicker({ searchEl, listEl, countEl, clearEl, checkboxSelector }) {
+  const updateCount = () => {
+    if (!countEl || !listEl) return;
+    const n = listEl.querySelectorAll(`${checkboxSelector}:checked`).length;
+    countEl.textContent = n === 0 ? '0 dipilih (auto-lock)' : `${n} UID dipilih`;
+  };
 
-function updateTokenUidCount() {
-  if (!tokenUidCount || !tokenUidList) return;
-  const n = tokenUidList.querySelectorAll('input[data-uid-pick]:checked').length;
-  tokenUidCount.textContent = n === 0 ? '0 dipilih (auto-lock)' : `${n} UID dipilih`;
+  if (listEl) {
+    listEl.addEventListener('change', (e) => {
+      if (e.target && e.target.matches(checkboxSelector)) updateCount();
+    });
+    updateCount();
+  }
+
+  if (searchEl && listEl) {
+    searchEl.addEventListener('input', () => {
+      const q = searchEl.value.trim().toLowerCase();
+      for (const item of listEl.querySelectorAll('.uid-pick-item')) {
+        const hay = item.dataset.search || '';
+        item.hidden = Boolean(q && !hay.includes(q));
+      }
+    });
+  }
+
+  if (clearEl && listEl) {
+    clearEl.addEventListener('click', () => {
+      for (const cb of listEl.querySelectorAll(`${checkboxSelector}:checked`)) {
+        cb.checked = false;
+      }
+      updateCount();
+    });
+  }
+
+  return updateCount;
 }
 
-if (tokenUidList) {
-  tokenUidList.addEventListener('change', (e) => {
-    if (e.target && e.target.matches('input[data-uid-pick]')) {
-      updateTokenUidCount();
+initUidPicker({
+  searchEl: document.getElementById('token-uid-search'),
+  listEl: document.getElementById('token-uid-list'),
+  countEl: document.getElementById('token-uid-count'),
+  clearEl: document.getElementById('token-uid-clear'),
+  checkboxSelector: 'input[data-uid-pick]',
+});
+
+const editTokenUidList = document.getElementById('edit-token-uid-list');
+const editTokenUidSearch = document.getElementById('edit-token-uid-search');
+const updateEditTokenUidCount = initUidPicker({
+  searchEl: editTokenUidSearch,
+  listEl: editTokenUidList,
+  countEl: document.getElementById('edit-token-uid-count'),
+  clearEl: document.getElementById('edit-token-uid-clear'),
+  checkboxSelector: 'input[data-edit-uid-pick]',
+});
+
+const formEditTokenUids = document.getElementById('form-edit-token-uids');
+const editTokenOwner = document.getElementById('edit-token-uids-owner');
+for (const btn of document.querySelectorAll('[data-edit-token-uids]')) {
+  btn.addEventListener('click', () => {
+    const id = btn.dataset.editTokenUids;
+    const label = btn.dataset.tokenLabel || '';
+    const current = new Set(
+      String(btn.dataset.tokenUids || '')
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean)
+    );
+    if (formEditTokenUids) {
+      formEditTokenUids.action = `/admin/tokens/${encodeURIComponent(id)}/uids`;
     }
+    if (editTokenOwner) {
+      editTokenOwner.textContent = label
+        ? `UID Whitelist untuk "${label}" (token buyer tetap sama)`
+        : 'Pilih UID Whitelist untuk token ini (token buyer tetap sama)';
+    }
+    if (editTokenUidSearch) {
+      editTokenUidSearch.value = '';
+    }
+    if (editTokenUidList) {
+      for (const item of editTokenUidList.querySelectorAll('.uid-pick-item')) {
+        item.hidden = false;
+      }
+      for (const cb of editTokenUidList.querySelectorAll('input[data-edit-uid-pick]')) {
+        cb.checked = current.has(cb.value);
+      }
+    }
+    updateEditTokenUidCount();
+    openModal('modal-edit-token-uids');
   });
-  updateTokenUidCount();
 }
 
-if (tokenUidSearch && tokenUidList) {
-  tokenUidSearch.addEventListener('input', () => {
-    const q = tokenUidSearch.value.trim().toLowerCase();
-    for (const item of tokenUidList.querySelectorAll('.uid-pick-item')) {
-      const hay = item.dataset.search || '';
-      item.hidden = Boolean(q && !hay.includes(q));
+/* ----------------------------------------------------- Team Password Reset */
+const formResetPass = document.getElementById('form-reset-pass');
+const resetPassLabel = document.getElementById('reset-pass-label');
+const resetPassInput = document.getElementById('reset-pass-input');
+for (const btn of document.querySelectorAll('[data-reset-user-pass]')) {
+  btn.addEventListener('click', () => {
+    const username = btn.dataset.resetUserPass;
+    if (formResetPass) {
+      formResetPass.action = `/admin/users/${encodeURIComponent(username)}/password`;
     }
-  });
-}
-
-if (tokenUidClear && tokenUidList) {
-  tokenUidClear.addEventListener('click', () => {
-    for (const cb of tokenUidList.querySelectorAll('input[data-uid-pick]:checked')) {
-      cb.checked = false;
+    if (resetPassLabel) {
+      resetPassLabel.textContent = `Password Baru untuk "${username}"`;
     }
-    updateTokenUidCount();
+    if (resetPassInput) resetPassInput.value = '';
+    openModal('modal-reset-pass');
   });
 }
 

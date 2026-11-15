@@ -11,12 +11,14 @@
         <p class="page-bar-sub">Daftar UID Growtopia yang diizinkan mengakses script melalui endpoint verifikasi.</p>
       </div>
       <div class="page-bar-actions">
+        <% if (!admin || admin.role !== 'leader') { %>
         <button type="button" class="btn" data-open-modal="modal-webhook">
           <% if (typeof discordWebhook === 'string' && discordWebhook) { %>
             <span class="status-dot"></span>
           <% } %>
           <span>Webhook Discord</span>
         </button>
+        <% } %>
         <a class="btn" href="/admin/logs">Log Aktivitas</a>
         <a class="btn" href="/admin/tokens">Token Buyer</a>
         <a class="btn" href="/admin/whitelist/export">Export</a>

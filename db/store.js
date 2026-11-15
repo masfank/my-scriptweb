@@ -106,6 +106,9 @@ function validateShape(data) {
     if (typeof admin.api_token !== 'string' || admin.api_token === '') {
       fail(`admins["${username}"].api_token wajib`);
     }
+    if (admin.role !== undefined && admin.role !== 'admin' && admin.role !== 'leader') {
+      fail(`admins["${username}"].role harus 'admin' atau 'leader'`);
+    }
   }
 
   /* file lama tanpa koleksi tokens: isi default, jangan tolak */
