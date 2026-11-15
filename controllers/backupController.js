@@ -33,10 +33,12 @@ exports.exportAll = asyncHandler(async (req, res) => {
     exported_at: new Date().toISOString(),
     whitelist: data.whitelist || {},
     tokens: data.tokens || {},
+    buyers: data.buyers || {},
     scripts,
     settings: {
       app_secret: data.settings.app_secret || '',
       discord_webhook: data.settings.discord_webhook || '',
+      bot_config: data.settings.bot_config || {},
     },
   });
 });
@@ -93,11 +95,13 @@ exports.importAll = asyncHandler(async (req, res) => {
     else sAdd++;
   }
 
-  /* 2. Update whitelist, tokens, script metadata, dan settings secara atomik */
+  /* 2. Update whitelist, tokens, buyers, script metadata, dan settings secara atomik */
   let wAdd = 0;
   let wUpd = 0;
   let tAdd = 0;
   let tUpd = 0;
+  let bAdd = 0;
+  let bUpd = 0;
 
   await store.update((db) => {
     for (const [name, meta] of Object.entries(scriptMeta)) {
@@ -175,6 +179,25 @@ exports.importAll = asyncHandler(async (req, res) => {
       }
     }
 
+    if (parsed.buyers && typeof parsed.buyers === 'object' && !Array.isArray(parsed.buyers)) {
+      if (!db.buyers || typeof db.buyers !== 'object') db.buyers = {};
+      for (const [rawDid, info] of Object.entries(parsed.buyers)) {
+        const did = String(rawDid || '').trim();
+        if (!DISCORD_ID_RE.test(did) || !info || typeof info !== 'object') continue;
+        const existed = Boolean(db.buyers[did]);
+        if (existed && !overwrite) continue;
+
+        const maxNum = Number(info.max_uids);
+        db.buyers[did] = {
+          max_uids: Number.isFinite(maxNum) ? Math.min(100, Math.max(1, Math.floor(maxNum))) : 1,
+          note: typeof info.note === 'string' ? info.note.trim().slice(0, 200) : '',
+          updated_at: typeof info.updated_at === 'string' && info.updated_at ? info.updated_at : now,
+        };
+        if (existed) bUpd++;
+        else bAdd++;
+      }
+    }
+
     if (includeSettings && parsed.settings && typeof parsed.settings === 'object') {
       if (typeof parsed.settings.discord_webhook === 'string' && (overwrite || !db.settings.discord_webhook)) {
         db.settings.discord_webhook = parsed.settings.discord_webhook.trim();
@@ -182,11 +205,38 @@ exports.importAll = asyncHandler(async (req, res) => {
       if (typeof parsed.settings.app_secret === 'string' && parsed.settings.app_secret.trim() && overwrite) {
         db.settings.app_secret = parsed.settings.app_secret.trim();
       }
+      const bc = parsed.settings.bot_config;
+      if (bc && typeof bc === 'object' && !Array.isArray(bc) && (overwrite || !db.settings.bot_config)) {
+        const cleanRoles = (arr) =>
+          Array.isArray(arr)
+            ? Array.from(new Set(arr.map((x) => String(x || '').trim()).filter((x) => DISCORD_ID_RE.test(x))))
+            : [];
+        const cleanScripts = (arr) =>
+          Array.isArray(arr)
+            ? Array.from(new Set(arr.map((x) => String(x || '').trim()).filter((x) => store.isSafeName(x))))
+            : [];
+        const cleanRoleScripts = Array.isArray(bc.role_scripts)
+          ? bc.role_scripts
+              .filter((r) => r && typeof r === 'object' && DISCORD_ID_RE.test(String(r.role_id || '').trim()))
+              .map((r) => ({
+                role_id: String(r.role_id).trim(),
+                label: typeof r.label === 'string' ? r.label.trim().slice(0, 60) : '',
+                scripts: cleanScripts(r.scripts),
+              }))
+          : [];
+        db.settings.bot_config = {
+          prefix: (typeof bc.prefix === 'string' && bc.prefix.trim().slice(0, 5)) || '!',
+          buyer_role_ids: cleanRoles(bc.buyer_role_ids),
+          admin_role_ids: cleanRoles(bc.admin_role_ids),
+          default_scripts: cleanScripts(bc.default_scripts),
+          role_scripts: cleanRoleScripts,
+        };
+      }
     }
   });
 
   return back(
     'ok',
-    `Import universal selesai — Whitelist: +${wAdd}/${wUpd} timpa, Token: +${tAdd}/${tUpd} timpa, Script: +${sAdd}/${sUpd} timpa.`
+    `Import universal selesai — Whitelist: +${wAdd}/${wUpd} timpa, Token: +${tAdd}/${tUpd} timpa, Kuota Buyer: +${bAdd}/${bUpd} timpa, Script: +${sAdd}/${sUpd} timpa.`
   );
 });

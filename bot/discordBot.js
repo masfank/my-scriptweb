@@ -177,27 +177,28 @@ function startDiscordBot() {
       const hasBuyerAccess = matchedRules.length > 0 || hasGeneralBuyer || openForAll;
 
       if (cmd === 'help' || cmd === 'cmds') {
+        if (!isAdmin) {
+          return replyEmbed(message, COLORS.err, 'Akses Ditolak', 'Command ini khusus Admin.');
+        }
         const fields = [
           {
             name: 'Buyer',
             value: [
               `\`${prefix}add <uid>\` — Daftarkan UID Growtopia sesuai role`,
               `\`${prefix}myuid\` — Lihat daftar UID dan sisa kuota`,
-              `\`${prefix}deluid <uid>\` — Hapus UID milikmu`,
             ].join('\n'),
           },
-        ];
-        if (isAdmin) {
-          fields.push({
+          {
             name: 'Admin',
             value: [
               `\`${prefix}addrole <@role|nama> <@buyer>\` — Beri role buyer & sinkronkan script`,
               `\`${prefix}delrole <@role|nama> <@buyer>\` — Cabut role buyer`,
               `\`${prefix}setmax <@buyer> <jumlah>\` — Atur batas maksimal UID buyer`,
+              `\`${prefix}del <uid>\` / \`${prefix}remove <uid>\` — Hapus UID dari whitelist`,
               `\`${prefix}myuid [@buyer]\` — Cek daftar UID milik buyer tertentu`,
             ].join('\n'),
-          });
-        }
+          },
+        ];
         return replyEmbed(message, COLORS.info, 'Daftar Command', null, fields);
       }
 
@@ -298,18 +299,18 @@ function startDiscordBot() {
         return replyEmbed(message, COLORS.info, `UID — ${targetLabel} (${body.used}/${body.max})`, list);
       }
 
-      if (cmd === 'deluid') {
-        if (!isAdmin && !hasBuyerAccess) {
-          return replyEmbed(message, COLORS.err, 'Akses Ditolak', 'Command ini khusus member yang memiliki role buyer.');
+      if (cmd === 'deluid' || cmd === 'del' || cmd === 'remove' || cmd === 'removeuid') {
+        if (!isAdmin) {
+          return replyEmbed(message, COLORS.err, 'Akses Ditolak', 'Command ini khusus Admin.');
         }
         const uid = (args[0] || '').trim();
         if (!buyerQuota.UID_RE.test(uid)) {
-          return replyEmbed(message, COLORS.warn, 'Format Salah', `Gunakan: \`${prefix}deluid 123456\``);
+          return replyEmbed(message, COLORS.warn, 'Format Salah', `Gunakan: \`${prefix}${cmd} 123456\``);
         }
         const { body } = await buyerQuota.removeBuyerUid({
           uid,
           discordId: message.author.id,
-          force: isAdmin,
+          force: true,
         });
         if (!body.ok) {
           return replyEmbed(message, COLORS.err, 'Gagal Menghapus UID', body.message || body.error);
