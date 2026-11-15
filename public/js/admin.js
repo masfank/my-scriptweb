@@ -410,8 +410,24 @@ function cleanBaseOrigin(raw) {
   return trimmed.replace(/\/(admin|api|login)(\/.*)?$/i, '');
 }
 
+function deterministicKey(seed) {
+  let h = 2166136261;
+  const s = String(seed || 'cgt');
+  for (let i = 0; i < s.length; i++) {
+    h ^= s.charCodeAt(i);
+    h = Math.imul(h, 16777619);
+  }
+  const key = [];
+  for (let i = 0; i < 8; i++) {
+    h ^= h >>> 13;
+    h = Math.imul(h, 1274126177);
+    key.push(((h >>> 0) % 190) + 31);
+  }
+  return key;
+}
+
 function buildObfuscatedLoader({ origin, tokenVal, scriptName }) {
-  const key = Array.from({ length: 8 }, () => Math.floor(Math.random() * 190) + 31);
+  const key = deterministicKey(origin);
   const enc = (str) => {
     const bytes = Array.from(new TextEncoder().encode(String(str)));
     return '_0xD({' + bytes.map((b, i) => b ^ key[i % key.length]).join(',') + '})';
@@ -431,6 +447,8 @@ function buildObfuscatedLoader({ origin, tokenVal, scriptName }) {
     `local _0xB=${enc(origin)}`,
     `local _0xP=${enc('`9[lisensi]`w ')}`,
     'local function _0xSay(m,c) pcall(LogToConsole,_0xP..(c or "`w")..tostring(m).."`0") end',
+    'local _0xT=tostring(CFG.token or ""):gsub("%s+","")',
+    'if not _0xT:match("^[a-fA-F0-9]+$") or #_0xT~=64 then _0xSay("Isi token dari admin ke CFG.token dulu","`4") return end',
     'local function _0xEnc(s) return tostring(s or ""):gsub("([^%w%-_%.~])",function(c) return string.format("%%%02X",string.byte(c)) end) end',
     'local function _0xNm(me) local w=me.name if (not w or w=="") and type(Client)=="table" and type(Client.GetLocalState)=="function" then local o,st=pcall(Client.GetLocalState) if o and type(st)=="table" and st.name and st.name~="" then w=st.name end end if (not w or w=="") and me.netid and me.netid~=-1 and type(GetPlayer)=="function" then local o,p=pcall(GetPlayer,me.netid) if o and type(p)=="table" and p.name and p.name~="" then w=p.name end end return tostring(w or ""):gsub("`.",""):gsub("^%s*(.-)%s*$","%1") end',
     'local _0xOk,_0xMe=pcall(GetLocal)',
@@ -440,7 +458,7 @@ function buildObfuscatedLoader({ origin, tokenVal, scriptName }) {
     'local _0xC=_0xNm(_0xMe)',
     `local _0xUrl=_0xB..${enc('/api/verify?uid=')}.._0xU..${enc('&script=')}..tostring(CFG.script)`,
     `if _0xC~="" then _0xUrl=_0xUrl..${enc('&name=')}.._0xEnc(_0xC) end`,
-    `local _0xH={[${enc('X-Buyer-Token')}]=tostring(CFG.token),[${enc('User-Agent')}]=${enc('CGT-License-Loader')}}`,
+    `local _0xH={[${enc('X-Buyer-Token')}]=_0xT,[${enc('User-Agent')}]=${enc('CGT-License-Loader')}}`,
     'local _0xRq,_0xRs=pcall(MakeRequest,_0xUrl,"GET",_0xH,"",CFG.timeout or 10000)',
     'if not _0xRq or type(_0xRs)~="table" or _0xRs.error or _0xRs.status~=200 then _0xSay("Verifikasi gagal ("..tostring(_0xRs and _0xRs.status or "-")..")","`4") return end',
     'local _0xBd=_0xRs.content or ""',
@@ -455,7 +473,7 @@ function buildLoaderCode() {
   if (!genOutput) return '';
   const origin = cleanBaseOrigin(genBaseUrl && genBaseUrl.value);
   const scriptName = (genScript && genScript.value.trim()) || 'autofind';
-  const tokenVal = (genToken && genToken.value.trim()) || 'TOKEN_DARI_PANEL_ADMIN';
+  const tokenVal = (genToken && genToken.value.trim()) || 'TOKEN-DARI-TIKET-YANG-DIKASIH-ADMIN';
   const mode = (genMode && genMode.value) || 'full';
 
   if (mode === 'obf') {
