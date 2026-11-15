@@ -1,0 +1,257 @@
+<%- include('partials/head', { title: title }) %>
+<div class="app-shell">
+  <%- include('partials/nav', { admin: admin, active: 'bot' }) %>
+
+  <main class="main-content">
+    <%- include('partials/banner', { msg: msg, err: err }) %>
+
+    <header class="page-bar">
+      <div class="page-bar-title">
+        <h1>Bot Discord</h1>
+        <p class="page-bar-sub">Atur Role Buyer, Prefix Command, Default Script, dan kuota UID buyer langsung dari panel.</p>
+      </div>
+      <div class="page-bar-actions">
+        <% if (botStatus.ready) { %>
+          <span class="badge badge-active">Online: <%= botStatus.tag %></span>
+        <% } else if (botStatus.tokenSet) { %>
+          <span class="badge badge-muted">Menghubungkan…</span>
+        <% } else { %>
+          <span class="badge badge-banned">Token Env Belum Di-set</span>
+        <% } %>
+      </div>
+    </header>
+
+    <% if (!botStatus.tokenSet) { %>
+      <div class="banner banner-warn">
+        <div class="banner-body">
+          Set <code>DISCORD_BOT_TOKEN</code> di <code>.env</code> atau Railway Variables (dan aktifkan <strong>Message Content Intent</strong> di Discord Developer Portal) agar bot otomatis online saat server start.
+        </div>
+      </div>
+    <% } %>
+
+    <section class="panel panel-pad form">
+      <form method="post" action="/admin/bot/config" class="form">
+        <div class="form-grid">
+          <div class="field-group">
+            <label class="field-label" for="bot-prefix">Prefix Command</label>
+            <input id="bot-prefix" type="text" name="prefix" class="input-control mono" maxlength="5" value="<%= botConfig.prefix %>" placeholder="!">
+            <span class="field-hint">Contoh: <code>!</code> → buyer pakai <code>!add 123456</code>, <code>!myuid</code>.</span>
+          </div>
+          <div class="field-group">
+            <label class="field-label" for="bot-buyer-roles">Buyer Role IDs Umum (Opsional)</label>
+            <input id="bot-buyer-roles" type="text" name="buyer_role_ids" class="input-control mono" value="<%= botConfig.buyer_role_ids.join(', ') %>" placeholder="123456789012345678, 987654321098765432">
+            <span class="field-hint">Role yang sudah ada di <strong>Mapping Role &rarr; Script</strong> di bawah otomatis boleh <code><%= botConfig.prefix %>add</code>. Kosongkan jika semua role sudah di-mapping per script.</span>
+          </div>
+        </div>
+
+        <div class="field-group">
+          <label class="field-label" for="bot-admin-roles">Admin Role IDs (Opsional)</label>
+          <input id="bot-admin-roles" type="text" name="admin_role_ids" class="input-control mono" value="<%= botConfig.admin_role_ids.join(', ') %>" placeholder="Role ID tambahan selain Administrator untuk !setmax">
+        </div>
+
+        <div class="field-group">
+          <span class="field-label">Default Script (Fallback jika Role belum di-mapping)</span>
+          <% if (scripts.length === 0) { %>
+            <p class="muted">Belum ada script Lua.</p>
+          <% } else { %>
+            <div class="script-picker-grid">
+              <% scripts.forEach(function (name) { %>
+                <label class="script-check-card">
+                  <input type="checkbox" name="default_scripts" value="<%= name %>" <%= botConfig.default_scripts.includes(name) ? 'checked' : '' %>>
+                  <span class="script-check-name"><%= name %>.lua</span>
+                </label>
+              <% }); %>
+            </div>
+          <% } %>
+          <span class="field-hint">Hanya dipakai kalau role buyer tidak ada di <strong>Mapping Role &rarr; Script</strong>. Untuk aturan per role Discord, gunakan panel Mapping di bawah.</span>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">Simpan Pengaturan Bot</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="panel panel-pad form">
+      <div class="page-bar">
+        <div class="page-bar-title">
+          <h2>Mapping Role Discord &rarr; Script</h2>
+          <p class="page-bar-sub">Atur role Discord mana yang otomatis memberi akses script tertentu saat buyer menjalankan <code><%= botConfig.prefix %>add &lt;uid&gt;</code>. Jika user punya beberapa role, semua script-nya digabung.</p>
+        </div>
+      </div>
+
+      <form method="post" action="/admin/bot/role-script" class="form">
+        <% const hasRoles = typeof discordRoles !== 'undefined' && Array.isArray(discordRoles) && discordRoles.length > 0; %>
+        <% if (hasRoles || (botConfig.buyer_role_ids && botConfig.buyer_role_ids.length > 0)) { %>
+          <div class="field-group">
+            <label class="field-label" for="discord-role-picker">Pilih Role dari Discord</label>
+            <select id="discord-role-picker" class="input-control">
+              <option value="">— Pilih role Discord untuk auto-isi Role ID &amp; Label —</option>
+              <% if (hasRoles) { %>
+                <% discordRoles.forEach(function (dr) { %>
+                  <option value="<%= dr.id %>" data-role-name="<%= dr.name %>">@<%= dr.name %> — <%= dr.id %> (<%= dr.guildName %>)</option>
+                <% }); %>
+              <% } else { %>
+                <% botConfig.buyer_role_ids.forEach(function (rid) { %>
+                  <option value="<%= rid %>" data-role-name="">Role ID: <%= rid %></option>
+                <% }); %>
+              <% } %>
+            </select>
+          </div>
+        <% } %>
+
+        <div class="form-grid">
+          <div class="field-group">
+            <label class="field-label" for="role_id">Discord Role ID <span class="req">*</span></label>
+            <input id="role_id" name="role_id" type="text" class="input-control mono" inputmode="numeric" required pattern="\d{15,22}" placeholder="123456789012345678">
+          </div>
+          <div class="field-group">
+            <label class="field-label" for="label">Label (Opsional)</label>
+            <input id="label" name="label" type="text" class="input-control" maxlength="60" placeholder="SB Buyer">
+          </div>
+        </div>
+
+        <div class="field-group">
+          <span class="field-label">Script yang Diberikan</span>
+          <% if (scripts && scripts.length) { %>
+            <div class="script-picker-grid">
+              <% scripts.forEach((s) => { %>
+                <label class="script-check-card">
+                  <input type="checkbox" name="scripts" value="<%= s %>">
+                  <span class="script-check-name"><%= s %>.lua</span>
+                </label>
+              <% }) %>
+            </div>
+          <% } else { %>
+            <p class="muted">Belum ada script di database.</p>
+          <% } %>
+        </div>
+
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">+ Tambah Mapping</button>
+        </div>
+      </form>
+
+      <div class="table-scroll">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Label</th>
+              <th>Role ID</th>
+              <th>Script</th>
+              <th class="col-actions">Aksi</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% if (botConfig.role_scripts && botConfig.role_scripts.length) { %>
+              <% botConfig.role_scripts.forEach((r) => { %>
+                <tr>
+                  <td><strong><%= r.label || '—' %></strong></td>
+                  <td class="mono"><%= r.role_id %></td>
+                  <td>
+                    <% if (r.scripts && r.scripts.length) { %>
+                      <div class="tag-list">
+                        <% r.scripts.forEach((sc) => { %>
+                          <span class="badge badge-muted mono"><%= sc %></span>
+                        <% }) %>
+                      </div>
+                    <% } else { %>
+                      <span class="muted">—</span>
+                    <% } %>
+                  </td>
+                  <td class="col-actions">
+                    <form method="post" action="/admin/bot/role-script/<%= r.role_id %>/delete" data-confirm="Hapus mapping role <%= r.label || r.role_id %>?">
+                      <button type="submit" class="btn btn-danger btn-sm">Hapus</button>
+                    </form>
+                  </td>
+                </tr>
+              <% }) %>
+            <% } else { %>
+              <tr>
+                <td colspan="4">
+                  <div class="empty-state">
+                    <p>Belum ada mapping role &rarr; script.</p>
+                  </div>
+                </td>
+              </tr>
+            <% } %>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel panel-pad form">
+      <div class="page-bar">
+        <div class="page-bar-title">
+          <h2>Kuota UID Buyer</h2>
+          <p class="page-bar-sub">Default 1 UID per Discord ID. Naikkan di sini atau lewat command <code><%= botConfig.prefix %>setmax @buyer 2</code>.</p>
+        </div>
+      </div>
+
+      <form method="post" action="/admin/bot/max" class="form-grid">
+        <div class="field-group">
+          <label class="field-label" for="max-discord-id">Discord User ID <span class="req">*</span></label>
+          <input id="max-discord-id" type="text" name="discord_id" class="input-control mono" inputmode="numeric" pattern="\d{15,22}" maxlength="22" placeholder="412345678901234567" required>
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="max-uids-val">Maksimal UID <span class="req">*</span></label>
+          <input id="max-uids-val" type="number" name="max_uids" class="input-control mono" min="1" max="100" value="2" required>
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="max-note">Catatan / Username</label>
+          <input id="max-note" type="text" name="note" class="input-control" maxlength="200" placeholder="Budi">
+        </div>
+        <div class="form-actions">
+          <button type="submit" class="btn btn-primary">Simpan Kuota</button>
+        </div>
+      </form>
+
+      <div class="table-scroll">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Discord ID</th>
+              <th>Username / Catatan</th>
+              <th class="num">UID Terpakai</th>
+              <th class="num">Maksimal UID</th>
+              <th class="col-actions">Aksi</th>
+            </tr>
+          </thead>
+          <tbody>
+            <% if (buyers.length === 0) { %>
+              <tr>
+                <td colspan="5">
+                  <div class="empty-state">
+                    <p>Belum ada data kuota buyer. Otomatis tercatat saat buyer pakai <code><%= botConfig.prefix %>add</code>.</p>
+                  </div>
+                </td>
+              </tr>
+            <% } %>
+            <% buyers.forEach(function (b) { %>
+              <% const fId = 'quota-form-' + b.discord_id; %>
+              <tr>
+                <td class="mono">
+                  <form id="<%= fId %>" method="post" action="/admin/bot/max">
+                    <input type="hidden" name="discord_id" value="<%= b.discord_id %>">
+                  </form>
+                  <%= b.discord_id %>
+                </td>
+                <td>
+                  <input type="text" name="note" form="<%= fId %>" class="input-control input-compact" maxlength="200" value="<%= b.note %>" placeholder="Catatan">
+                </td>
+                <td class="num mono"><%= b.used_uids %></td>
+                <td class="num">
+                  <input type="number" name="max_uids" form="<%= fId %>" class="input-control mono input-quota-num" min="1" max="100" value="<%= b.max_uids %>" required>
+                </td>
+                <td class="col-actions">
+                  <button type="submit" form="<%= fId %>" class="btn btn-sm btn-primary">Simpan</button>
+                </td>
+              </tr>
+            <% }); %>
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+</div>
+<%- include('partials/foot') %>

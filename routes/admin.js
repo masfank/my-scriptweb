@@ -13,6 +13,7 @@ const tokens = require('../controllers/tokenController');
 const logs = require('../controllers/logController');
 const users = require('../controllers/userController');
 const backup = require('../controllers/backupController');
+const bot = require('../controllers/botController');
 
 const router = express.Router();
 
@@ -53,8 +54,13 @@ router.use(async (req, res, next) => {
           uids: Array.isArray(t.uids) && t.uids.length > 0 ? t.uids.map(String) : t.uid ? [String(t.uid)] : [],
         }))
         .sort((a, b) => a.label.localeCompare(b.label));
+      res.locals.loaderAppSecret =
+        req.admin && req.admin.role !== 'leader'
+          ? data.settings.app_secret || process.env.APP_SECRET || ''
+          : '';
     } catch {
       res.locals.loaderTokens = [];
+      res.locals.loaderAppSecret = '';
     }
   }
   next();
@@ -100,9 +106,22 @@ router.post('/users', requireOwner, users.create);
 router.post('/users/:username/password', requireOwner, users.resetPassword);
 router.post('/users/:username/delete', requireOwner, users.remove);
 
+/* pengaturan Bot Discord (khusus Admin) */
+router.get('/bot', requireOwner, bot.showPage);
+router.post('/bot/config', requireOwner, bot.saveConfig);
+router.post('/bot/role-script', requireOwner, bot.addRoleScript);
+router.post('/bot/role-script/:roleId/delete', requireOwner, bot.removeRoleScript);
+router.post('/bot/max', requireOwner, bot.setMaxWeb);
+
 /* universal backup export & import semua data (khusus Admin) */
 router.get('/backup/export', requireOwner, backup.exportAll);
 router.post('/backup/import', requireOwner, backup.importAll);
+
+/* API bot Discord (Bearer api_token) */
+router.post('/api/bot/add', bot.addUid);
+router.get('/api/bot/buyer/:discordId', bot.getBuyer);
+router.post('/api/bot/set-max', bot.setMax);
+router.post('/api/bot/remove', bot.removeUid);
 
 /* webhook discord untuk history eksekusi buyer (khusus Admin) */
 router.post('/webhook', requireOwner, settings.saveWebhook);

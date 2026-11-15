@@ -1,5 +1,7 @@
 node_modules/
 .env
+bot/node_modules/
+bot/.env
 data/
 local/
 chpids.txt

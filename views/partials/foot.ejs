@@ -39,9 +39,21 @@
         </div>
         <div class="field-group">
           <label class="field-label" for="gen-script">Nama Script</label>
-          <input id="gen-script" type="text" class="input-control mono" value="autofind" placeholder="autofind" data-gen-input>
+          <input id="gen-script" type="text" class="input-control mono" value="auto" placeholder="auto" data-gen-input>
+          <span class="field-hint"><code>auto</code> = Universal Loader (auto-run jika 1 script, dialog pilih jika &gt;1). Atau isi nama script tertentu.</span>
         </div>
         <div class="field-group">
+          <label class="field-label" for="gen-auth-mode">Mode Autentikasi</label>
+          <select id="gen-auth-mode" class="input-control" data-app-secret="<%= typeof loaderAppSecret !== 'undefined' ? loaderAppSecret : '' %>" data-gen-input>
+            <% if (typeof loaderAppSecret !== 'undefined' && loaderAppSecret) { %>
+              <option value="secret" selected>Tanpa Token (Whitelist UID + Bot)</option>
+              <option value="token">Pakai Buyer Token (X-Buyer-Token)</option>
+            <% } else { %>
+              <option value="token" selected>Pakai Buyer Token (X-Buyer-Token)</option>
+            <% } %>
+          </select>
+        </div>
+        <div class="field-group" id="gen-token-group">
           <label class="field-label" for="gen-token-select">Buyer Token (X-Buyer-Token)</label>
           <select id="gen-token-select" class="input-control">
             <option value="">— Pilih dari daftar atau isi manual —</option>
@@ -154,6 +166,6 @@
 </div>
 <% } %>
 
-<script src="/js/admin.js?v=23" defer></script>
+<script src="/js/admin.js?v=24" defer></script>
 </body>
 </html>

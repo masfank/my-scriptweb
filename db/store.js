@@ -36,7 +36,7 @@ class StoreError extends Error {
 }
 
 function emptyData() {
-  return { whitelist: {}, scripts: {}, admins: {}, settings: {}, tokens: {} };
+  return { whitelist: {}, scripts: {}, admins: {}, settings: {}, tokens: {}, buyers: {} };
 }
 
 function isPlainObject(value) {
@@ -154,6 +154,22 @@ function validateShape(data) {
   }
   if (data.settings.discord_webhook !== undefined && typeof data.settings.discord_webhook !== 'string') {
     fail('settings.discord_webhook harus string');
+  }
+  if (data.settings.bot_config !== undefined && !isPlainObject(data.settings.bot_config)) {
+    fail('settings.bot_config harus object');
+  }
+
+  if (data.buyers === undefined) data.buyers = {};
+  if (!isPlainObject(data.buyers)) fail('buyers bukan object');
+  for (const [discordId, buyer] of Object.entries(data.buyers)) {
+    if (!/^\d{15,22}$/.test(discordId)) fail(`buyers key "${discordId}" bukan Discord ID valid`);
+    if (!isPlainObject(buyer)) fail(`buyers["${discordId}"] bukan object`);
+    if (!Number.isInteger(buyer.max_uids) || buyer.max_uids < 1) {
+      fail(`buyers["${discordId}"].max_uids harus integer >= 1`);
+    }
+    if (buyer.note !== undefined && typeof buyer.note !== 'string') {
+      fail(`buyers["${discordId}"].note harus string`);
+    }
   }
 
   /* logs dipisah ke data/logs/YYYY-MM-DD.json agar db.json tetap ramping */

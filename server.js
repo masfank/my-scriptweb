@@ -10,6 +10,7 @@ const helmet = require('helmet');
 const cookieSession = require('cookie-session');
 
 const store = require('./db/store');
+const { startDiscordBot, stopDiscordBot } = require('./bot/discordBot');
 const publicRoutes = require('./routes/public');
 const authRoutes = require('./routes/auth');
 const adminRoutes = require('./routes/admin');
@@ -52,6 +53,7 @@ function createApp(sessionSecret) {
   app.set('views', path.join(__dirname, 'views'));
 
   app.use(express.urlencoded({ extended: false, limit: '5mb' }));
+  app.use(express.json({ limit: '1mb' }));
   app.use(express.static(path.join(__dirname, 'public'), { maxAge: '1h' }));
 
   app.use(
@@ -164,11 +166,14 @@ async function main() {
   const port = Number(process.env.PORT) || 3000;
   const server = app.listen(port, host, () => {
     console.log(`lisensi siap di http://${host}:${port}`);
+    startDiscordBot();
   });
 
   const shutdown = (sig) => {
     console.log(`[${sig}] menutup server...`);
-    server.close(() => process.exit(0));
+    stopDiscordBot().finally(() => {
+      server.close(() => process.exit(0));
+    });
   };
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));

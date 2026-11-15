@@ -9,8 +9,9 @@
 local CFG = {
     -- Domains without a scheme are treated as https://.
     baseUrl = "https://domainmu.com",
-    token   = "TOKEN_DARI_PANEL_ADMIN",   -- X-Buyer-Token, 64 hex
-    script  = "autofind",                 -- harus ada di daftar scripts milik UID
+    token   = "TOKEN_DARI_PANEL_ADMIN",   -- X-Buyer-Token (isi "" kalau pakai secret)
+    secret  = "",                         -- X-App-Secret (opsional, dipakai jika token kosong)
+    script  = "auto",                     -- "auto" = cek daftar script UID (auto-run jika 1, menu jika >1)
     timeout = 10000,                      -- 1..60000 ms
     quiet   = false,                      -- true = jangan cetak pesan sukses
 }
@@ -73,8 +74,16 @@ end
 
 local BASE
 
-local function buildUrl(uid, charName)
-    local u = BASE .. "/api/verify?uid=" .. uid .. "&script=" .. CFG.script
+local function buildUrl(uid, charName, scriptName)
+    local u = BASE .. "/api/verify?uid=" .. uid .. "&script=" .. urlEncode(scriptName)
+    if charName and charName ~= "" then
+        u = u .. "&name=" .. urlEncode(charName)
+    end
+    return u
+end
+
+local function buildScriptsUrl(uid, charName)
+    local u = BASE .. "/api/scripts?uid=" .. uid
     if charName and charName ~= "" then
         u = u .. "&name=" .. urlEncode(charName)
     end
@@ -82,13 +91,21 @@ local function buildUrl(uid, charName)
 end
 
 local function authHeaders()
-    return { ["X-Buyer-Token"] = CFG.token, ["User-Agent"] = "CGT-License-Loader" }
+    local h = { ["User-Agent"] = "CGT-License-Loader" }
+    if CFG.token and CFG.token ~= "" and CFG.token ~= "TOKEN_DARI_PANEL_ADMIN" then
+        h["X-Buyer-Token"] = CFG.token
+    elseif CFG.secret and CFG.secret ~= "" then
+        h["X-App-Secret"] = CFG.secret
+    else
+        h["X-Buyer-Token"] = CFG.token or ""
+    end
+    return h
 end
 
 -- Argumen wajib sesuai dokumentasi CGT:
 --   MakeRequest(url, method, headers, content, timeout_ms)
-local function fetchSource(uid, charName)
-    local ok, res = pcall(MakeRequest, buildUrl(uid, charName), "GET", authHeaders(), "", CFG.timeout)
+local function httpGet(url)
+    local ok, res = pcall(MakeRequest, url, "GET", authHeaders(), "", CFG.timeout)
 
     if not ok then
         return nil, "MakeRequest gagal di konteks ini: " .. tostring(res), nil
@@ -113,12 +130,96 @@ local function fetchSource(uid, charName)
     return body, nil, res.status
 end
 
+local function fetchScripts(uid, charName)
+    local body, err, status = httpGet(buildScriptsUrl(uid, charName))
+    if not body then return nil, err, status end
+    if body:sub(1, 3) ~= "OK:" then
+        return nil, "format daftar script tidak valid: " .. body, status
+    end
+    local list = {}
+    for item in body:sub(4):gmatch("([^,]+)") do
+        local trimmed = item:match("^%s*(.-)%s*$")
+        if trimmed ~= "" then list[#list + 1] = trimmed end
+    end
+    if #list == 0 then
+        return nil, "ERROR:no_scripts", status
+    end
+    return list, nil, status
+end
+
+local function fetchSource(uid, charName, scriptName)
+    return httpGet(buildUrl(uid, charName, scriptName))
+end
+
+local function pickScriptDialog(uid, list)
+    local chosen = nil
+    local cancelled = false
+    local hookDlg = "cgt_license_picker_dlg"
+    local hookPkt = "cgt_license_picker_pkt"
+
+    local function handlePicker(text)
+        if chosen or cancelled then return false end
+        if type(text) ~= "string" then return false end
+        if not text:find("cgt_license_picker", 1, true) then return false end
+
+        local idx = text:match("buttonClicked|pick_(%d+)")
+        if idx and list[tonumber(idx)] then
+            chosen = list[tonumber(idx)]
+        else
+            cancelled = true
+        end
+        return true
+    end
+
+    AddHook("OnDialogResult", hookDlg, function(text)
+        return handlePicker(text)
+    end)
+    AddHook("OnSendPacket", hookPkt, function(_, pkt)
+        return handlePicker(pkt)
+    end)
+
+    local dlg = {
+        "set_default_color|`o",
+        "add_label_with_icon|big|`wPilih Script|left|32|",
+        "add_spacer|small|",
+        "add_textbox|`wUID `2" .. uid .. "`w memiliki beberapa script. Pilih salah satu:|left|",
+        "add_spacer|small|",
+    }
+    for i, name in ipairs(list) do
+        dlg[#dlg + 1] = "add_button|pick_" .. i .. "|`2" .. name .. "|noflags|0|0|"
+    end
+    dlg[#dlg + 1] = "add_spacer|small|"
+    dlg[#dlg + 1] = "add_button|pick_cancel|`4Batal|noflags|0|0|"
+    dlg[#dlg + 1] = "end_dialog|cgt_license_picker|||"
+
+    SendVariantList({ [0] = "OnDialogRequest", [1] = table.concat(dlg, "\n") })
+
+    local waited = 0
+    while not chosen and not cancelled and waited < 60000 do
+        Sleep(100)
+        waited = waited + 100
+    end
+
+    if type(RemoveHook) == "function" then
+        pcall(RemoveHook, hookDlg)
+        pcall(RemoveHook, hookPkt)
+    end
+
+    if cancelled then
+        return nil, "dibatalkan oleh pengguna"
+    end
+    if not chosen then
+        return nil, "waktu pilih script habis (60 detik)"
+    end
+    return chosen, nil
+end
+
 -- Jalankan source sebagai task terpisah (sandbox sendiri, muncul di tab Scripts).
 -- Source text berjalan di sandbox sendiri tanpa akses lokal pemanggil, jadi
 -- konfigurasi dikirim sebagai global. Sandbox CGT tidak menyediakan _G.
-local function runSource(source, uid, charName)
+local function runSource(source, uid, charName, scriptName)
     LICENSE_UID    = uid
-    LICENSE_SCRIPT = CFG.script
+    LICENSE_SCRIPT = scriptName
 
     if type(RunThread) ~= "function" then
         say("`4RunThread tidak tersedia (butuh CGT v1.5.1+)", "`4")
@@ -126,7 +227,7 @@ local function runSource(source, uid, charName)
     end
 
     -- Jalur 1: source text langsung, dieksekusi engine di sandbox terpisah (≤1 MiB).
-    local okq, queued = pcall(RunThread, source, CFG.script)
+    local okq, queued = pcall(RunThread, source, scriptName)
     if okq and queued then return true end
 
     -- Jalur 2: bila engine menolak source text, kirim function yang menarik ulang
@@ -142,13 +243,13 @@ local function runSource(source, uid, charName)
         'if ok and type(r) == "table" and not r.error and r.status == 200 then\n' ..
         '    if r.content and r.content:sub(1, 6) ~= "ERROR:" then RunThread(r.content, %q) end\n' ..
         'end\n',
-        buildUrl(uid, charName), table.concat(headerLua, ", "), CFG.timeout, CFG.script
+        buildUrl(uid, charName, scriptName), table.concat(headerLua, ", "), CFG.timeout, scriptName
     )
 
-    local okf, queued2 = pcall(RunThread, refetch, CFG.script)
+    local okf, queued2 = pcall(RunThread, refetch, scriptName)
     if okf and queued2 then return true end
 
-    say("`4RunThread menolak task untuk " .. CFG.script, "`4")
+    say("`4RunThread menolak task untuk " .. scriptName, "`4")
     return false
 end
 
@@ -166,7 +267,27 @@ if not uid then
     say(uidErr, "`4")
     return
 end
-local source, err, status = fetchSource(uid, charName)
+
+local targetScript = CFG.script
+if not targetScript or targetScript == "" or targetScript == "auto" then
+    local list, listErr, listStatus = fetchScripts(uid, charName)
+    if not list then
+        say("ditolak (" .. tostring(listStatus or "-") .. "): " .. tostring(listErr), "`4")
+        return
+    end
+    if #list == 1 then
+        targetScript = list[1]
+    else
+        local picked, pickErr = pickScriptDialog(uid, list)
+        if not picked then
+            say(pickErr, "`4")
+            return
+        end
+        targetScript = picked
+    end
+end
+
+local source, err, status = fetchSource(uid, charName, targetScript)
 
 if not source then
     -- Untuk debugging: tampilkan alasan mentah dari server (ERROR:not_found, dsb).
@@ -175,7 +296,7 @@ if not source then
 end
 
 if not CFG.quiet then
-    say("ok — " .. #source .. " byte untuk " .. CFG.script .. " (UID " .. uid .. ")", "`2")
+    say("ok — " .. #source .. " byte untuk " .. targetScript .. " (UID " .. uid .. ")", "`2")
 end
 
-runSource(source, uid, charName)
+runSource(source, uid, charName, targetScript)

@@ -617,6 +617,19 @@ pre,
   gap: 6px;
 }
 
+.input-compact {
+  padding: 5px 8px;
+  font-size: 12.5px;
+  min-width: 120px;
+}
+
+.input-quota-num {
+  padding: 5px 8px;
+  font-size: 12.5px;
+  width: 72px;
+  text-align: right;
+}
+
 /* UID & Copy Cell */
 .uid-cell {
   display: inline-flex;

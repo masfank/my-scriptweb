@@ -15,10 +15,12 @@ function currentSecret(data) {
 exports.show = asyncHandler(async (req, res) => {
   const data = await store.read();
   const current = currentSecret(data);
+  const adminRecord = req.admin && data.admins[req.admin.username] ? data.admins[req.admin.username] : null;
   res.render('secret', {
     title: 'Secret',
     admin: req.admin,
     secret: current.secret,
+    apiToken: adminRecord ? adminRecord.api_token : '',
     fromEnv: current.fromEnv,
     msg: typeof req.query.ok === 'string' ? req.query.ok : null,
     err: typeof req.query.err === 'string' ? req.query.err : null,

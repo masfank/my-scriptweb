@@ -91,12 +91,7 @@ function uidAllowed(entry, uid) {
   return UID_RE.test(uid) && uid.length >= MIN_FIRST_LOCK_DIGITS;
 }
 
-exports.verify = asyncHandler(async (req, res) => {
-  res.type('text/plain');
-  res.set('Cache-Control', 'no-store');
-
-  const data = await store.read();
-
+async function authenticateAndCheckUid(req, data, { uid, scriptForLog }) {
   const rawToken = req.get('x-buyer-token');
   const token = rawToken ? store.findToken(data, rawToken) : null;
   const via = token ? 'token' : 'secret';
@@ -107,47 +102,105 @@ exports.verify = asyncHandler(async (req, res) => {
     const secret = data.settings.app_secret || process.env.APP_SECRET || '';
     const provided = req.get('x-app-secret');
     if (!secret || !safeEqual(provided, secret)) {
-      await emitFailure(req, {
-        uid: req.query.uid,
-        charName,
-        script: req.query.script,
+      return {
+        ok: false,
         result: 'invalid_secret',
         via: rawToken ? 'token' : 'secret',
         token: null,
         webhookUrl,
-      });
-      return res.send('ERROR:invalid_secret');
+        charName,
+        uid: req.query.uid,
+        script: scriptForLog,
+        discordId: '',
+      };
     }
   }
 
-  const uid = typeof req.query.uid === 'string' ? req.query.uid.trim() : '';
-  const script = typeof req.query.script === 'string' ? req.query.script.trim() : '';
-
-  if (!UID_RE.test(uid) || !store.isSafeName(script)) {
-    await emitFailure(req, { uid, charName, script, result: 'bad_request', via, token, webhookUrl });
-    return res.send('ERROR:bad_request');
+  if (!UID_RE.test(uid)) {
+    return {
+      ok: false,
+      result: 'bad_request',
+      via,
+      token,
+      webhookUrl,
+      charName,
+      uid,
+      script: scriptForLog,
+      discordId: '',
+    };
   }
 
   const entry = data.whitelist[uid];
   const discordId = (entry && entry.discord_id) || '';
   if (!entry) {
-    await emitFailure(req, { uid, charName, script, result: 'not_found', via, token, webhookUrl, discordId });
-    return res.send('ERROR:not_found');
+    return { ok: false, result: 'not_found', via, token, webhookUrl, charName, uid, script: scriptForLog, discordId };
   }
   if (entry.status !== 'active') {
-    await emitFailure(req, { uid, charName, script, result: 'banned', via, token, webhookUrl, discordId });
-    return res.send('ERROR:banned');
+    return { ok: false, result: 'banned', via, token, webhookUrl, charName, uid, script: scriptForLog, discordId };
   }
 
   /* token sudah terkunci ke UID lain: tolak sebelum menyentuh script/file */
   const allowedUids = tokenAllowedUids(token);
   if (token && allowedUids.length > 0 && !allowedUids.includes(uid)) {
-    await emitFailure(req, { uid, charName, script, result: 'uid_locked', via, token, webhookUrl, discordId });
-    return res.send('ERROR:uid_locked');
+    return { ok: false, result: 'uid_locked', via, token, webhookUrl, charName, uid, script: scriptForLog, discordId };
   }
   if (token && allowedUids.length === 0 && !uidAllowed(entry, uid)) {
-    await emitFailure(req, { uid, charName, script, result: 'uid_not_allowed', via, token, webhookUrl, discordId });
-    return res.send('ERROR:uid_not_allowed');
+    return { ok: false, result: 'uid_not_allowed', via, token, webhookUrl, charName, uid, script: scriptForLog, discordId };
+  }
+
+  return { ok: true, entry, token, via, webhookUrl, charName, uid, discordId };
+}
+
+exports.listScripts = asyncHandler(async (req, res) => {
+  res.type('text/plain');
+  res.set('Cache-Control', 'no-store');
+
+  const data = await store.read();
+  const uid = typeof req.query.uid === 'string' ? req.query.uid.trim() : '';
+  const auth = await authenticateAndCheckUid(req, data, { uid, scriptForLog: '_list' });
+
+  if (!auth.ok) {
+    await emitFailure(req, auth);
+    return res.send(`ERROR:${auth.result}`);
+  }
+
+  const list = Array.isArray(auth.entry.scripts) ? auth.entry.scripts.filter((s) => store.isSafeName(s)) : [];
+  if (list.length === 0) {
+    await emitFailure(req, {
+      uid: auth.uid,
+      charName: auth.charName,
+      script: '_list',
+      result: 'no_scripts',
+      via: auth.via,
+      token: auth.token,
+      webhookUrl: auth.webhookUrl,
+      discordId: auth.discordId,
+    });
+    return res.send('ERROR:no_scripts');
+  }
+
+  return res.send(`OK:${list.join(',')}`);
+});
+
+exports.verify = asyncHandler(async (req, res) => {
+  res.type('text/plain');
+  res.set('Cache-Control', 'no-store');
+
+  const data = await store.read();
+  const uid = typeof req.query.uid === 'string' ? req.query.uid.trim() : '';
+  const script = typeof req.query.script === 'string' ? req.query.script.trim() : '';
+
+  const auth = await authenticateAndCheckUid(req, data, { uid, scriptForLog: script });
+  if (!auth.ok) {
+    await emitFailure(req, auth);
+    return res.send(`ERROR:${auth.result}`);
+  }
+
+  const { entry, token, via, webhookUrl, charName, discordId } = auth;
+
+  if (!store.isSafeName(script)) {
+    await emitFailure(req, { uid, charName, script, result: 'bad_request', via, token, webhookUrl, discordId });
+    return res.send('ERROR:bad_request');
   }
 
   if (!entry.scripts.includes(script)) {
