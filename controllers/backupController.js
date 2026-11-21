@@ -7,6 +7,26 @@ const asyncHandler = require('../middleware/asyncHandler');
 const UID_RE = /^\d{1,19}$/;
 const DISCORD_ID_RE = /^\d{15,22}$/;
 const MAX_SOURCE = 2_000_000;
+const ROLE_ID_RE = /^\d{15,22}$/;
+
+function cleanBuyerRoles(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return {};
+  const roles = {};
+  for (const [roleId, info] of Object.entries(raw)) {
+    if (!ROLE_ID_RE.test(roleId) || !info || typeof info !== 'object') continue;
+    const maxRaw = Number(info.max_uids);
+    if (!Number.isInteger(maxRaw) || maxRaw < 1 || maxRaw > 100) continue;
+    const quota = { max_uids: maxRaw };
+    if (typeof info.note === 'string' && info.note.trim()) {
+      quota.note = info.note.trim().slice(0, 200);
+    }
+    if (typeof info.updated_at === 'string' && info.updated_at) {
+      quota.updated_at = info.updated_at;
+    }
+    roles[roleId] = quota;
+  }
+  return roles;
+}
 
 exports.exportAll = asyncHandler(async (req, res) => {
   const data = await store.read();
@@ -191,6 +211,7 @@ exports.importAll = asyncHandler(async (req, res) => {
         db.buyers[did] = {
           max_uids: Number.isFinite(maxNum) ? Math.min(100, Math.max(1, Math.floor(maxNum))) : 1,
           note: typeof info.note === 'string' ? info.note.trim().slice(0, 200) : '',
+          roles: cleanBuyerRoles(info.roles),
           updated_at: typeof info.updated_at === 'string' && info.updated_at ? info.updated_at : now,
         };
         if (existed) bUpd++;
@@ -218,11 +239,15 @@ exports.importAll = asyncHandler(async (req, res) => {
         const cleanRoleScripts = Array.isArray(bc.role_scripts)
           ? bc.role_scripts
               .filter((r) => r && typeof r === 'object' && DISCORD_ID_RE.test(String(r.role_id || '').trim()))
-              .map((r) => ({
-                role_id: String(r.role_id).trim(),
-                label: typeof r.label === 'string' ? r.label.trim().slice(0, 60) : '',
-                scripts: cleanScripts(r.scripts),
-              }))
+              .map((r) => {
+                const maxRaw = Number(r.max_uids);
+                return {
+                  role_id: String(r.role_id).trim(),
+                  label: typeof r.label === 'string' ? r.label.trim().slice(0, 60) : '',
+                  scripts: cleanScripts(r.scripts),
+                  max_uids: Number.isInteger(maxRaw) && maxRaw >= 1 && maxRaw <= 100 ? maxRaw : 1,
+                };
+              })
           : [];
         db.settings.bot_config = {
           prefix: (typeof bc.prefix === 'string' && bc.prefix.trim().slice(0, 5)) || '!',

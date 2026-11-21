@@ -45,6 +45,7 @@ exports.showPage = asyncHandler(async (req, res) => {
       note: info.note || '',
       max_uids: info.max_uids || 1,
       used_uids: uidCounts[discord_id] || 0,
+      quotas: buyerQuota.getBuyerQuotaOverview(data, discord_id),
     }))
     .sort((a, b) => a.discord_id.localeCompare(b.discord_id));
 
@@ -93,6 +94,8 @@ exports.saveConfig = asyncHandler(async (req, res) => {
 exports.addRoleScript = asyncHandler(async (req, res) => {
   const roleId = typeof req.body.role_id === 'string' ? req.body.role_id.trim() : '';
   const label = typeof req.body.label === 'string' ? req.body.label.trim().slice(0, 64) : '';
+  const maxRaw = req.body.max_uids === undefined || req.body.max_uids === '' ? 1 : Number(req.body.max_uids);
+  const maxUids = Number.isInteger(maxRaw) && maxRaw >= 1 && maxRaw <= 100 ? maxRaw : null;
   const rawScripts = Array.isArray(req.body.scripts)
     ? req.body.scripts
     : typeof req.body.scripts === 'string' && req.body.scripts.trim()
@@ -105,6 +108,9 @@ exports.addRoleScript = asyncHandler(async (req, res) => {
   if (!ROLE_ID_RE.test(roleId)) {
     return res.redirect('/admin/bot?err=' + encodeURIComponent('Role ID Discord harus angka 15–22 digit.'));
   }
+  if (maxUids === null) {
+    return res.redirect('/admin/bot?err=' + encodeURIComponent('Maksimal UID per buyer harus angka 1–100.'));
+  }
   if (scripts.length === 0) {
     return res.redirect('/admin/bot?err=' + encodeURIComponent('Pilih minimal 1 script untuk role tersebut.'));
   }
@@ -113,7 +119,7 @@ exports.addRoleScript = asyncHandler(async (req, res) => {
     const prev = (db.settings && db.settings.bot_config) || {};
     const list = Array.isArray(prev.role_scripts) ? [...prev.role_scripts] : [];
     const idx = list.findIndex((item) => item && item.role_id === roleId);
-    const entry = { role_id: roleId, label, scripts };
+    const entry = { role_id: roleId, label, scripts, max_uids: maxUids };
     if (idx >= 0) list[idx] = entry;
     else list.push(entry);
 
@@ -126,7 +132,7 @@ exports.addRoleScript = asyncHandler(async (req, res) => {
     };
   });
 
-  return res.redirect('/admin/bot?ok=' + encodeURIComponent(`Mapping role ${label || roleId} → ${scripts.join(', ')} disimpan.`));
+  return res.redirect('/admin/bot?ok=' + encodeURIComponent(`Mapping role ${label || roleId} → ${scripts.join(', ')} disimpan (maks ${maxUids} UID/buyer).`));
 });
 
 exports.removeRoleScript = asyncHandler(async (req, res) => {
@@ -150,13 +156,15 @@ exports.removeRoleScript = asyncHandler(async (req, res) => {
 exports.setMaxWeb = asyncHandler(async (req, res) => {
   const outcome = await buyerQuota.setBuyerMax({
     discordId: req.body.discord_id,
+    roleId: req.body.role_id,
     maxUids: req.body.max_uids,
     note: req.body.note,
   });
   if (!outcome.body.ok) {
     return res.redirect('/admin/bot?err=' + encodeURIComponent(outcome.body.message || outcome.body.error));
   }
-  return res.redirect('/admin/bot?ok=' + encodeURIComponent(`Kuota UID untuk ${outcome.body.discord_id} diatur ke ${outcome.body.max_uids}.`));
+  const scope = outcome.body.role_id ? `role ${outcome.body.label}` : 'kuota umum';
+  return res.redirect('/admin/bot?ok=' + encodeURIComponent(`Kuota ${scope} untuk ${outcome.body.discord_id} diatur ke ${outcome.body.max_uids}.`));
 });
 
 exports.addUid = asyncHandler(async (req, res) => {
@@ -165,6 +173,7 @@ exports.addUid = asyncHandler(async (req, res) => {
     discordId: req.body.discord_id,
     discordName: req.body.discord_name,
     requestedScripts: req.body.scripts,
+    requestedRoleIds: req.body.role_ids || req.body.role_id,
     requestedMax: req.body.max_uids,
   });
   return res.status(outcome.status).json(outcome.body);
@@ -178,6 +187,7 @@ exports.getBuyer = asyncHandler(async (req, res) => {
 exports.setMax = asyncHandler(async (req, res) => {
   const outcome = await buyerQuota.setBuyerMax({
     discordId: req.body.discord_id,
+    roleId: req.body.role_id,
     maxUids: req.body.max_uids,
     note: req.body.note,
   });

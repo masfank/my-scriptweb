@@ -8,7 +8,7 @@
     <header class="page-bar">
       <div class="page-bar-title">
         <h1>Bot Discord</h1>
-        <p class="page-bar-sub">Atur Role Buyer, Prefix Command, Default Script, dan kuota UID buyer langsung dari panel.</p>
+        <p class="page-bar-sub">Atur Role Buyer, Prefix Command, Default Script, dan kuota UID per role langsung dari panel.</p>
       </div>
       <div class="page-bar-actions">
         <% if (botStatus.ready) { %>
@@ -109,6 +109,11 @@
             <label class="field-label" for="label">Label (Opsional)</label>
             <input id="label" name="label" type="text" class="input-control" maxlength="60" placeholder="SB Buyer">
           </div>
+          <div class="field-group">
+            <label class="field-label" for="role_max_uids">Maks UID per Buyer <span class="req">*</span></label>
+            <input id="role_max_uids" name="max_uids" type="number" class="input-control mono" min="1" max="100" value="1" required>
+            <span class="field-hint">Default kuota role. Bisa di-override per buyer di bawah atau lewat <code><%= botConfig.prefix %>setmax</code>.</span>
+          </div>
         </div>
 
         <div class="field-group">
@@ -139,6 +144,7 @@
               <th>Label</th>
               <th>Role ID</th>
               <th>Script</th>
+              <th class="num">Maks UID/buyer</th>
               <th class="col-actions">Aksi</th>
             </tr>
           </thead>
@@ -159,6 +165,7 @@
                       <span class="muted">—</span>
                     <% } %>
                   </td>
+                  <td class="num mono"><%= r.max_uids || 1 %></td>
                   <td class="col-actions">
                     <form method="post" action="/admin/bot/role-script/<%= r.role_id %>/delete" data-confirm="Hapus mapping role <%= r.label || r.role_id %>?">
                       <button type="submit" class="btn btn-danger btn-sm">Hapus</button>
@@ -168,7 +175,7 @@
               <% }) %>
             <% } else { %>
               <tr>
-                <td colspan="4">
+                <td colspan="5">
                   <div class="empty-state">
                     <p>Belum ada mapping role &rarr; script.</p>
                   </div>
@@ -184,7 +191,7 @@
       <div class="page-bar">
         <div class="page-bar-title">
           <h2>Kuota UID Buyer</h2>
-          <p class="page-bar-sub">Default 1 UID per Discord ID. Naikkan di sini atau lewat command <code><%= botConfig.prefix %>setmax @buyer 2</code>.</p>
+          <p class="page-bar-sub">Default 1 UID per role. Atur default di Mapping Role atau override per buyer di sini / lewat command <code><%= botConfig.prefix %>setmax @buyer &lt;role&gt; 2</code>.</p>
         </div>
       </div>
 
@@ -192,6 +199,15 @@
         <div class="field-group">
           <label class="field-label" for="max-discord-id">Discord User ID <span class="req">*</span></label>
           <input id="max-discord-id" type="text" name="discord_id" class="input-control mono" inputmode="numeric" pattern="\d{15,22}" maxlength="22" placeholder="412345678901234567" required>
+        </div>
+        <div class="field-group">
+          <label class="field-label" for="max-role">Role</label>
+          <select id="max-role" name="role_id" class="input-control">
+            <option value="">Umum (fallback)</option>
+            <% botConfig.role_scripts.forEach(function (r) { %>
+              <option value="<%= r.role_id %>"><%= r.label || r.role_id %> — default <%= r.max_uids || 1 %></option>
+            <% }); %>
+          </select>
         </div>
         <div class="field-group">
           <label class="field-label" for="max-uids-val">Maksimal UID <span class="req">*</span></label>
@@ -211,6 +227,7 @@
           <thead>
             <tr>
               <th>Discord ID</th>
+              <th>Role</th>
               <th>Username / Catatan</th>
               <th class="num">UID Terpakai</th>
               <th class="num">Maksimal UID</th>
@@ -220,7 +237,7 @@
           <tbody>
             <% if (buyers.length === 0) { %>
               <tr>
-                <td colspan="5">
+                <td colspan="6">
                   <div class="empty-state">
                     <p>Belum ada data kuota buyer. Otomatis tercatat saat buyer pakai <code><%= botConfig.prefix %>add</code>.</p>
                   </div>
@@ -228,25 +245,30 @@
               </tr>
             <% } %>
             <% buyers.forEach(function (b) { %>
-              <% const fId = 'quota-form-' + b.discord_id; %>
-              <tr>
-                <td class="mono">
-                  <form id="<%= fId %>" method="post" action="/admin/bot/max">
-                    <input type="hidden" name="discord_id" value="<%= b.discord_id %>">
-                  </form>
-                  <%= b.discord_id %>
-                </td>
-                <td>
-                  <input type="text" name="note" form="<%= fId %>" class="input-control input-compact" maxlength="200" value="<%= b.note %>" placeholder="Catatan">
-                </td>
-                <td class="num mono"><%= b.used_uids %></td>
-                <td class="num">
-                  <input type="number" name="max_uids" form="<%= fId %>" class="input-control mono input-quota-num" min="1" max="100" value="<%= b.max_uids %>" required>
-                </td>
-                <td class="col-actions">
-                  <button type="submit" form="<%= fId %>" class="btn btn-sm btn-primary">Simpan</button>
-                </td>
-              </tr>
+              <% b.quotas.forEach(function (q, i) { %>
+                <% const fId = 'quota-form-' + b.discord_id + '-' + (q.role_id || 'general'); %>
+                <tr>
+                  <td class="mono"><%= i === 0 ? b.discord_id : '' %>
+                    <form id="<%= fId %>" method="post" action="/admin/bot/max">
+                      <input type="hidden" name="discord_id" value="<%= b.discord_id %>">
+                      <% if (q.role_id) { %>
+                        <input type="hidden" name="role_id" value="<%= q.role_id %>">
+                      <% } %>
+                    </form>
+                  </td>
+                  <td><%= q.label %></td>
+                  <td>
+                    <input type="text" name="note" form="<%= fId %>" class="input-control input-compact" maxlength="200" value="<%= i === 0 ? b.note : '' %>" placeholder="Catatan">
+                  </td>
+                  <td class="num mono"><%= q.used %></td>
+                  <td class="num">
+                    <input type="number" name="max_uids" form="<%= fId %>" class="input-control mono input-quota-num" min="1" max="100" value="<%= q.max %>" required>
+                  </td>
+                  <td class="col-actions">
+                    <button type="submit" form="<%= fId %>" class="btn btn-sm btn-primary">Simpan</button>
+                  </td>
+                </tr>
+              <% }); %>
             <% }); %>
           </tbody>
         </table>

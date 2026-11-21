@@ -224,6 +224,45 @@ RunThread(res.content, SCRIPT)
 Urutan argumen `MakeRequest` berbeda antar build CGT. Sesuaikan pemanggilannya; server hanya
 peduli pada URL dan header `X-Buyer-Token`.
 
+## Bot Discord & kuota per role
+
+Mapping **Role → Script** di `/admin/bot` menyimpan `max_uids` (default 1): batas UID per buyer
+untuk role tersebut. Admin bisa meng-override nilai itu untuk satu buyer lewat tabel
+**Kuota UID Buyer** atau command:
+
+```
+!setmax @buyer PNB 2      # buyer ini boleh 2 UID dengan script PNB
+!setmax @buyer PTHT 1     # PTHT tetap 1 UID
+```
+
+- `!add <uid> [role]` — daftar UID. Role wajib dicantumkan kalau buyer punya lebih dari satu
+  role buyer, supaya kuota dan script-nya tidak tercampur.
+- `!myuid` — lihat daftar UID dan kuota per role.
+- `!addrole` / `!delrole` — beri/cabut role buyer.
+
+Contoh: buyer dengan PNB 2 + PTHT 1 bisa mendaftarkan 2 UID `PNB` dan 1 UID `autofind`.
+UID PTHT berikutnya ditolak dengan `quota_exceeded`, walaupun kuota PNB masih ada.
+`buyers[discord_id].max_uids` (format lama) kini hanya jadi fallback **Umum** bila tidak ada
+mapping role yang cocok.
+
+```json
+"settings": {
+  "bot_config": {
+    "role_scripts": [
+      { "role_id": "1570428127346298920", "label": "PNB", "scripts": ["PNB"], "max_uids": 2 }
+    ]
+  }
+},
+"buyers": {
+  "412345678901234567": {
+    "max_uids": 1,
+    "roles": {
+      "1570428127346298920": { "max_uids": 2, "note": "PNB", "updated_at": "2026-11-21T00:00:00.000Z" }
+    }
+  }
+}
+```
+
 ## Panel admin
 
 - **Login** — `/login`. Cookie session 8 jam; logout lewat tombol di kanan atas.
@@ -310,6 +349,9 @@ tar czf lisensi-$(date +%F).tar.gz data/
 ```
 
 Backup harian sudah cukup; `data/db.json.bak` adalah salinan tulisan terakhir dari aplikasi, bukan pengganti backup.
+Backup versi lama (tanpa `max_uids` di `role_scripts` dan `roles` di `buyers`) tetap bisa
+diimpor: keduanya diisi default `1` / `{}`. Backup dari versi ini menyimpan kedua field tersebut,
+jadi kuota per role ikut terbawa saat restore/update.
 
 ## Keamanan
 

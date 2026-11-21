@@ -27,6 +27,7 @@ const paths = {
 };
 
 const NAME_RE = /^[A-Za-z0-9_-]{1,64}$/;
+const ROLE_ID_RE = /^\d{15,22}$/;
 
 class StoreError extends Error {
   constructor(message) {
@@ -158,6 +159,27 @@ function validateShape(data) {
   if (data.settings.bot_config !== undefined && !isPlainObject(data.settings.bot_config)) {
     fail('settings.bot_config harus object');
   }
+  if (isPlainObject(data.settings.bot_config) && Array.isArray(data.settings.bot_config.role_scripts)) {
+    data.settings.bot_config.role_scripts.forEach((rule, i) => {
+      if (!isPlainObject(rule) || !ROLE_ID_RE.test(String(rule.role_id || ''))) {
+        fail(`settings.bot_config.role_scripts[${i}].role_id tidak valid`);
+      }
+      if (rule.label !== undefined && typeof rule.label !== 'string') {
+        fail(`settings.bot_config.role_scripts[${i}].label harus string`);
+      }
+      if (!Array.isArray(rule.scripts) || rule.scripts.some((name) => typeof name !== 'string')) {
+        fail(`settings.bot_config.role_scripts[${i}].scripts harus array nama script`);
+      }
+      if (
+        rule.max_uids !== undefined &&
+        (!Number.isInteger(rule.max_uids) || rule.max_uids < 1 || rule.max_uids > 100)
+      ) {
+        fail(`settings.bot_config.role_scripts[${i}].max_uids harus integer 1–100`);
+      }
+      rule.role_id = String(rule.role_id);
+      if (rule.max_uids === undefined) rule.max_uids = 1;
+    });
+  }
 
   if (data.buyers === undefined) data.buyers = {};
   if (!isPlainObject(data.buyers)) fail('buyers bukan object');
@@ -169,6 +191,22 @@ function validateShape(data) {
     }
     if (buyer.note !== undefined && typeof buyer.note !== 'string') {
       fail(`buyers["${discordId}"].note harus string`);
+    }
+    if (buyer.roles === undefined) buyer.roles = {};
+    if (!isPlainObject(buyer.roles)) fail(`buyers["${discordId}"].roles harus object`);
+    for (const [roleId, quota] of Object.entries(buyer.roles)) {
+      if (!ROLE_ID_RE.test(roleId)) fail(`buyers["${discordId}"].roles key "${roleId}" bukan Role ID valid`);
+      if (
+        !isPlainObject(quota) ||
+        !Number.isInteger(quota.max_uids) ||
+        quota.max_uids < 1 ||
+        quota.max_uids > 100
+      ) {
+        fail(`buyers["${discordId}"].roles["${roleId}"].max_uids harus integer 1–100`);
+      }
+      if (quota.note !== undefined && typeof quota.note !== 'string') {
+        fail(`buyers["${discordId}"].roles["${roleId}"].note harus string`);
+      }
     }
   }
 

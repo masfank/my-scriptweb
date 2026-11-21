@@ -63,22 +63,10 @@ async function resolveMember(guild, token) {
 
 async function syncRoleScriptsToMemberUids(discordId, roleId, roleScripts) {
   const rule = (roleScripts || []).find((r) => r.role_id === roleId);
-  const newScripts = rule && Array.isArray(rule.scripts) ? rule.scripts : [];
-  if (newScripts.length === 0) return [];
-
-  const added = [];
-  await store.update((db) => {
-    for (const entry of Object.values(db.whitelist || {})) {
-      if (entry.discord_id !== discordId) continue;
-      const cur = Array.isArray(entry.scripts) ? entry.scripts : [];
-      const merged = Array.from(new Set([...cur, ...newScripts]));
-      if (merged.length !== cur.length) {
-        entry.scripts = merged;
-        added.push(entry.uid || '');
-      }
-    }
-  });
-  return newScripts;
+  const scripts = rule && Array.isArray(rule.scripts) ? rule.scripts : [];
+  if (scripts.length === 0) return [];
+  const granted = await buyerQuota.grantRoleScriptsToUids({ discordId, roleId });
+  return granted > 0 ? scripts : [];
 }
 
 function hasAnyRole(member, roleIds) {
@@ -184,7 +172,7 @@ function startDiscordBot() {
           {
             name: 'Buyer',
             value: [
-              `\`${prefix}add <uid>\` — Daftarkan UID Growtopia sesuai role`,
+              `\`${prefix}add <uid> [role]\` — Daftarkan UID Growtopia sesuai role`,
               `\`${prefix}myuid\` — Lihat daftar UID dan sisa kuota`,
             ].join('\n'),
           },
@@ -193,7 +181,7 @@ function startDiscordBot() {
             value: [
               `\`${prefix}addrole <@role|nama> <@buyer>\` — Beri role buyer & sinkronkan script`,
               `\`${prefix}delrole <@role|nama> <@buyer>\` — Cabut role buyer`,
-              `\`${prefix}setmax <@buyer> <jumlah>\` — Atur batas maksimal UID buyer`,
+              `\`${prefix}setmax <@buyer> <role> <jumlah>\` — Atur batas UID buyer per role`,
               `\`${prefix}del <uid>\` / \`${prefix}remove <uid>\` — Hapus UID dari whitelist`,
               `\`${prefix}myuid [@buyer]\` — Cek daftar UID milik buyer tertentu`,
             ].join('\n'),
@@ -203,18 +191,55 @@ function startDiscordBot() {
       }
 
       if (cmd === 'add') {
+        const uid = (args[0] || '').trim();
+        if (!buyerQuota.UID_RE.test(uid)) {
+          return replyEmbed(message, COLORS.warn, 'Format Salah', `Gunakan: \`${prefix}add 123456\` atau \`${prefix}add 123456 PNB\``);
+        }
+
+        const roleToken = args.slice(1).join(' ').trim();
+        let selectedRules = [];
         let requestedScripts;
-        if (roleScripts.length > 0) {
-          if (matchedRules.length > 0) {
-            requestedScripts = Array.from(
-              new Set(matchedRules.flatMap((r) => (Array.isArray(r.scripts) ? r.scripts : [])))
+        let includeGeneral = false;
+
+        if (roleToken) {
+          const role = resolveRole(message.guild, roleToken, roleScripts);
+          if (!role) {
+            return replyEmbed(
+              message,
+              COLORS.warn,
+              'Role Tidak Ditemukan',
+              `Role \`${roleToken}\` tidak ditemukan di server ini.`
             );
-            if (hasGeneralBuyer && defaultScripts.length > 0) {
-              requestedScripts = Array.from(new Set([...requestedScripts, ...defaultScripts]));
-            }
-          } else if (hasGeneralBuyer && defaultScripts.length > 0) {
-            requestedScripts = defaultScripts;
-          } else {
+          }
+          const rule = roleScripts.find((r) => r.role_id === role.id);
+          if (!rule) {
+            return replyEmbed(
+              message,
+              COLORS.warn,
+              'Role Belum Di-mapping',
+              `Role ${role.name} belum punya script di panel Bot.`
+            );
+          }
+          if (!member.roles.cache.has(role.id) && !isAdmin) {
+            return replyEmbed(message, COLORS.err, 'Akses Ditolak', `Role ${role.name} bukan role buyer kamu.`);
+          }
+          selectedRules = [rule];
+          requestedScripts = Array.isArray(rule.scripts) ? [...rule.scripts] : [];
+        } else if (matchedRules.length > 1) {
+          const choices = matchedRules.map((r) => r.label || r.role_id).join(', ');
+          return replyEmbed(
+            message,
+            COLORS.warn,
+            'Pilih Role',
+            `Kamu punya beberapa role buyer (${choices}). Gunakan \`${prefix}add ${uid} <role>\` supaya kuota per role sesuai.`
+          );
+        } else if (matchedRules.length === 1) {
+          selectedRules = matchedRules;
+          requestedScripts = Array.from(
+            new Set(matchedRules.flatMap((r) => (Array.isArray(r.scripts) ? r.scripts : [])))
+          );
+        } else if (roleScripts.length > 0) {
+          if (!hasGeneralBuyer) {
             return replyEmbed(
               message,
               COLORS.err,
@@ -222,21 +247,21 @@ function startDiscordBot() {
               'Akunmu belum memiliki role buyer yang terhubung ke script apa pun.'
             );
           }
-        } else {
-          if (!hasGeneralBuyer && !openForAll && !isAdmin) {
-            return replyEmbed(
-              message,
-              COLORS.err,
-              'Akses Ditolak',
-              'Akunmu belum memiliki role buyer. Hubungi admin setelah pembayaran.'
-            );
-          }
-          requestedScripts = defaultScripts.length > 0 ? defaultScripts : undefined;
+        } else if (!hasGeneralBuyer && !openForAll && !isAdmin) {
+          return replyEmbed(
+            message,
+            COLORS.err,
+            'Akses Ditolak',
+            'Akunmu belum memiliki role buyer. Hubungi admin setelah pembayaran.'
+          );
         }
 
-        const uid = (args[0] || '').trim();
-        if (!buyerQuota.UID_RE.test(uid)) {
-          return replyEmbed(message, COLORS.warn, 'Format Salah', `Gunakan: \`${prefix}add 123456\``);
+        if (hasGeneralBuyer && defaultScripts.length > 0) {
+          requestedScripts = Array.from(new Set([...(requestedScripts || []), ...defaultScripts]));
+          includeGeneral = true;
+        }
+        if (!requestedScripts || requestedScripts.length === 0) {
+          requestedScripts = defaultScripts.length > 0 ? defaultScripts : undefined;
         }
 
         const { body } = await buyerQuota.addBuyerUid({
@@ -244,16 +269,22 @@ function startDiscordBot() {
           discordId: message.author.id,
           discordName: message.author.username,
           requestedScripts,
+          requestedRoleIds: selectedRules.map((r) => r.role_id),
+          includeGeneral,
         });
 
         if (!body.ok) {
           return replyEmbed(message, COLORS.err, 'Gagal Mendaftarkan UID', body.message || body.error);
         }
 
-        const matchedLabels = matchedRules.map((r) => r.label || r.role_id).filter(Boolean);
+        const quotaValue = Array.isArray(body.quotas) && body.quotas.length > 0
+          ? body.quotas.map((q) => `${q.label}: **${q.used}/${q.max}**`).join('\n')
+          : `**${body.used}/${body.max}**`;
+        const shownRules = selectedRules.length > 0 ? selectedRules : matchedRules;
+        const matchedLabels = shownRules.map((r) => r.label || r.role_id).filter(Boolean);
         const fields = [
           { name: 'UID', value: `\`${body.uid}\``, inline: true },
-          { name: 'Kuota', value: `**${body.used}/${body.max}**`, inline: true },
+          { name: 'Kuota', value: quotaValue, inline: false },
           { name: 'Script Aktif', value: `\`${(body.scripts || []).join(', ') || '-'}\``, inline: false },
         ];
         if (matchedLabels.length > 0) {
@@ -285,18 +316,25 @@ function startDiscordBot() {
         if (!body.ok) {
           return replyEmbed(message, COLORS.err, 'Gagal', 'Data UID gagal diambil dari server.');
         }
+        const quotaLines = (body.quotas || [])
+          .map((q) => `• ${q.label}: **${q.used}/${q.max}**`)
+          .join('\n');
+        const quotaValue = quotaLines || `**${body.used}/${body.max}**`;
         if (!body.uids || body.uids.length === 0) {
           return replyEmbed(
             message,
             COLORS.info,
             `UID — ${targetLabel}`,
-            `Belum ada UID terdaftar (kuota **0/${body.max}**). Gunakan \`${prefix}add <uid>\`.`
+            `Belum ada UID terdaftar.\n${quotaValue}\nGunakan \`${prefix}add <uid>\`.`
           );
         }
         const list = body.uids
           .map((u) => `• \`${u.uid}\` — ${u.status}${Array.isArray(u.scripts) && u.scripts.length ? ` (\`${u.scripts.join(', ')}\`)` : ''}`)
           .join('\n');
-        return replyEmbed(message, COLORS.info, `UID — ${targetLabel} (${body.used}/${body.max})`, list);
+        return replyEmbed(message, COLORS.info, `UID — ${targetLabel}`, null, [
+          { name: 'UID', value: list, inline: false },
+          { name: 'Kuota per Role', value: quotaValue, inline: false },
+        ]);
       }
 
       if (cmd === 'deluid' || cmd === 'del' || cmd === 'remove' || cmd === 'removeuid') {
@@ -390,24 +428,64 @@ function startDiscordBot() {
         if (!isAdmin) {
           return replyEmbed(message, COLORS.err, 'Akses Ditolak', 'Command ini khusus Admin.');
         }
-        const targetUser = message.mentions.users.first();
-        const rawId = targetUser ? targetUser.id : (args[0] || '').replace(/[<@!>]/g, '');
-        const maxUids = Number(args[1]);
+        const buyerToken = args[0] || '';
+        const rawMax = args[args.length - 1];
+        const roleToken = args.slice(1, -1).join(' ').trim();
+        const targetMember = await resolveMember(message.guild, buyerToken);
+        const rawId = targetMember ? targetMember.id : buyerToken.replace(/[<@!>]/g, '');
+
+        let roleId = '';
+        let roleLabel = 'Umum';
+        if (roleToken) {
+          const role = resolveRole(message.guild, roleToken, roleScripts);
+          if (!role) {
+            return replyEmbed(
+              message,
+              COLORS.warn,
+              'Role Tidak Ditemukan',
+              `Role \`${roleToken}\` tidak ditemukan di server ini.`
+            );
+          }
+          const rule = roleScripts.find((r) => r.role_id === role.id);
+          if (!rule) {
+            return replyEmbed(
+              message,
+              COLORS.warn,
+              'Role Belum Di-mapping',
+              `Role ${role.name} belum punya script di panel Bot.`
+            );
+          }
+          roleId = role.id;
+          roleLabel = rule.label || role.name;
+        } else if (roleScripts.length > 0) {
+          const choices = roleScripts
+            .map((r) => `${prefix}setmax @buyer ${r.label || r.role_id} 2`)
+            .join('\n');
+          return replyEmbed(
+            message,
+            COLORS.warn,
+            'Format Salah',
+            `Role wajib dicantumkan:\n${choices}`
+          );
+        }
+
         const { body } = await buyerQuota.setBuyerMax({
           discordId: rawId,
-          maxUids,
-          note: targetUser ? targetUser.username : '',
+          roleId,
+          maxUids: Number(rawMax),
+          note: targetMember ? targetMember.user.username : '',
         });
         if (!body.ok) {
           return replyEmbed(
             message,
             COLORS.warn,
             'Format Salah',
-            `Gunakan: \`${prefix}setmax @buyer 2\` (${body.message || body.error})`
+            `Gunakan: \`${prefix}setmax @buyer ${roleLabel} 2\` (${body.message || body.error})`
           );
         }
         return replyEmbed(message, COLORS.ok, 'Kuota Diperbarui', null, [
           { name: 'Buyer', value: `<@${rawId}>`, inline: true },
+          { name: 'Role', value: roleId ? `<@&${roleId}>` : 'Umum', inline: true },
           { name: 'Maksimal UID', value: `**${body.max_uids}**`, inline: true },
         ]);
       }
