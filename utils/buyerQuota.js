@@ -76,9 +76,10 @@ function quotaScope(db, discordId, rule, rules) {
   };
 }
 
-function quotaScopes(db, discordId, rules = getRoleRules(db)) {
+function quotaScopes(db, discordId, rules = getRoleRules(db), includeGeneral = true) {
   const rows = rules.map((rule) => quotaScope(db, discordId, rule, rules));
   const general = quotaScope(db, discordId, null, rules);
+  if (!includeGeneral) return rows;
   return rules.length === 0 || general.used > 0 ? [...rows, general] : rows;
 }
 async function grantRoleScriptsToUids({ discordId, roleId }) {
@@ -201,6 +202,7 @@ async function addBuyerUid({
   discordName = '',
   requestedScripts,
   requestedRoleIds,
+  heldRoleIds,
   includeGeneral = false,
   requestedMax,
 }) {
@@ -221,6 +223,7 @@ async function addBuyerUid({
   }
 
   const cleanRoleIds = normalizeRoleIds(requestedRoleIds);
+  const cleanHeldRoleIds = normalizeRoleIds(heldRoleIds);
   let outcome = null;
   await store.update((db) => {
     const existing = db.whitelist[cleanUid];
@@ -307,8 +310,8 @@ async function addBuyerUid({
     if (existing) {
       existing.status = 'active';
       existing.discord_id = cleanDiscordId;
-      /* !add bersifat final: script lama dari role lain tidak boleh ikut terbawa. */
-      existing.scripts = [...scripts];
+      /* Role yang masih dipegang boleh menempel di UID yang sama. */
+      existing.scripts = Array.from(new Set([...(existing.scripts || []), ...scripts]));
       if (cleanName && !existing.note) existing.note = cleanName;
     } else {
       db.whitelist[cleanUid] = {
@@ -323,8 +326,11 @@ async function addBuyerUid({
     }
 
     const updatedRules = getRoleRules(db);
-    const quotas = scopes.map((rule) => quotaScope(db, cleanDiscordId, rule, updatedRules));
-    const primary = quotas[0] || { used: 0, max: 1, uids: [] };
+    const displayRules = cleanHeldRoleIds.length > 0
+      ? updatedRules.filter((rule) => cleanHeldRoleIds.includes(rule.role_id))
+      : selected.length > 0 ? selected : [];
+    const quotas = quotaScopes(db, cleanDiscordId, displayRules);
+    const primary = quotaScope(db, cleanDiscordId, scopes[0] || null, updatedRules);
     outcome = {
       status: 200,
       body: {
@@ -344,7 +350,7 @@ async function addBuyerUid({
   return outcome;
 }
 
-async function getBuyerInfo(discordId) {
+async function getBuyerInfo(discordId, heldRoleIds) {
   const cleanDiscordId = typeof discordId === 'string' ? discordId.trim() : '';
   if (!DISCORD_ID_RE.test(cleanDiscordId)) {
     return { status: 400, body: { ok: false, error: 'invalid_discord_id' } };
@@ -359,7 +365,10 @@ async function getBuyerInfo(discordId) {
       scripts: item.scripts,
     }));
 
-  const quotas = quotaScopes(data, cleanDiscordId);
+  const held = normalizeRoleIds(heldRoleIds);
+  const allRules = getRoleRules(data);
+  const rules = held.length > 0 ? allRules.filter((rule) => held.includes(rule.role_id)) : allRules;
+  const quotas = quotaScopes(data, cleanDiscordId, rules, held.length === 0);
   const totalMax = quotas.reduce((sum, scope) => sum + scope.max, 0) || 1;
 
   return {

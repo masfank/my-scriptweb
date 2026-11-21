@@ -236,10 +236,9 @@ untuk role tersebut. Admin bisa meng-override nilai itu untuk satu buyer lewat t
 ```
 
 - `!add <uid> [role]` — daftar UID. Role wajib dicantumkan kalau buyer punya lebih dari satu
-  role buyer; buyer harus benar-benar memegang role itu (termasuk Admin). Script UID ditimpa
-  dengan script role pilihan, dan UID lain milik buyer dibersihkan dari script role yang sudah
-  tidak dipegang.
-- `!myuid` — lihat daftar UID dan kuota per role.
+  role buyer; buyer harus benar-benar memegang role itu (termasuk Admin). Script dari role yang
+  masih dipegang bisa menempel di UID yang sama; script role yang sudah tidak dipegang dibersihkan.
+- `!myuid` — lihat daftar UID dan kuota per role yang masih dipegang, lengkap dengan UID yang dihitung di tiap role.
 - `!addrole` / `!delrole` — beri/cabut role buyer. `!delrole` juga mencabut script role itu dari
   UID buyer, kecuali script tersebut masih diberikan role lain atau default script.
 

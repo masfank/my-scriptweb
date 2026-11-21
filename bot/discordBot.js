@@ -264,11 +264,14 @@ function startDiscordBot() {
           requestedScripts = defaultScripts.length > 0 ? defaultScripts : undefined;
         }
 
+        const heldRoleIds = roleScripts
+          .filter((r) => member.roles.cache.has(r.role_id))
+          .map((r) => r.role_id);
         let cleaned = { uids: 0, scripts: [] };
         if (roleScripts.length > 0) {
           cleaned = await buyerQuota.revokeUnheldRoleScripts({
             discordId: message.author.id,
-            heldRoleIds: roleScripts.filter((r) => member.roles.cache.has(r.role_id)).map((r) => r.role_id),
+            heldRoleIds,
             keepScripts: defaultScripts,
           });
         }
@@ -279,6 +282,7 @@ function startDiscordBot() {
           discordName: message.author.username,
           requestedScripts,
           requestedRoleIds: selectedRules.map((r) => r.role_id),
+          heldRoleIds,
           includeGeneral,
         });
 
@@ -316,11 +320,12 @@ function startDiscordBot() {
 
         let targetId = message.author.id;
         let targetLabel = message.author.username;
+        let targetMember = member;
         if (args[0]) {
           if (!isAdmin) {
             return replyEmbed(message, COLORS.err, 'Akses Ditolak', 'Hanya Admin yang bisa mengecek UID milik orang lain.');
           }
-          const targetMember = await resolveMember(message.guild, args[0]);
+          targetMember = await resolveMember(message.guild, args[0]);
           if (!targetMember) {
             return replyEmbed(message, COLORS.warn, 'Member Tidak Ditemukan', `Gunakan: \`${prefix}myuid @buyer\``);
           }
@@ -328,12 +333,18 @@ function startDiscordBot() {
           targetLabel = targetMember.user.username;
         }
 
-        const { body } = await buyerQuota.getBuyerInfo(targetId);
+        const heldRoleIds = roleScripts
+          .filter((r) => targetMember.roles.cache.has(r.role_id))
+          .map((r) => r.role_id);
+        const { body } = await buyerQuota.getBuyerInfo(targetId, heldRoleIds);
         if (!body.ok) {
           return replyEmbed(message, COLORS.err, 'Gagal', 'Data UID gagal diambil dari server.');
         }
         const quotaLines = (body.quotas || [])
-          .map((q) => `• ${q.label}: **${q.used}/${q.max}**`)
+          .map((q) => {
+            const ids = Array.isArray(q.uids) && q.uids.length > 0 ? ` — \`${q.uids.join(', ')}\`` : '';
+            return `• ${q.label}: **${q.used}/${q.max}**${ids}`;
+          })
           .join('\n');
         const quotaValue = quotaLines || `**${body.used}/${body.max}**`;
         if (!body.uids || body.uids.length === 0) {
