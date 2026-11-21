@@ -236,9 +236,12 @@ untuk role tersebut. Admin bisa meng-override nilai itu untuk satu buyer lewat t
 ```
 
 - `!add <uid> [role]` — daftar UID. Role wajib dicantumkan kalau buyer punya lebih dari satu
-  role buyer, supaya kuota dan script-nya tidak tercampur.
+  role buyer; buyer harus benar-benar memegang role itu (termasuk Admin). Script UID ditimpa
+  dengan script role pilihan, dan UID lain milik buyer dibersihkan dari script role yang sudah
+  tidak dipegang.
 - `!myuid` — lihat daftar UID dan kuota per role.
-- `!addrole` / `!delrole` — beri/cabut role buyer.
+- `!addrole` / `!delrole` — beri/cabut role buyer. `!delrole` juga mencabut script role itu dari
+  UID buyer, kecuali script tersebut masih diberikan role lain atau default script.
 
 Contoh: buyer dengan PNB 2 + PTHT 1 bisa mendaftarkan 2 UID `PNB` dan 1 UID `autofind`.
 UID PTHT berikutnya ditolak dengan `quota_exceeded`, walaupun kuota PNB masih ada.

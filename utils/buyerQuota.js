@@ -107,6 +107,78 @@ async function grantRoleScriptsToUids({ discordId, roleId }) {
   return granted;
 }
 
+async function revokeRoleScriptsFromUids({ discordId, roleId, keepRoleIds = [], keepScripts = [] }) {
+  const cleanDiscordId = typeof discordId === 'string' ? discordId.trim() : '';
+  const cleanRoleId = normalizeRoleIds(roleId)[0] || '';
+  if (!DISCORD_ID_RE.test(cleanDiscordId) || !cleanRoleId) {
+    return { uids: 0, scripts: [], emptied: 0 };
+  }
+
+  let result = { uids: 0, scripts: [], emptied: 0 };
+  await store.update((db) => {
+    const rules = getRoleRules(db);
+    const role = rules.find((r) => r.role_id === cleanRoleId);
+    if (!role || role.scripts.length === 0) return;
+
+    const keep = new Set(
+      Array.isArray(keepScripts) ? keepScripts.filter((s) => typeof s === 'string') : []
+    );
+    for (const id of normalizeRoleIds(keepRoleIds)) {
+      const keptRule = rules.find((r) => r.role_id === id);
+      if (keptRule) keptRule.scripts.forEach((script) => keep.add(script));
+    }
+    const removed = role.scripts.filter((script) => !keep.has(script));
+    if (removed.length === 0) return;
+
+    let changed = 0;
+    let emptied = 0;
+    for (const entry of Object.values(db.whitelist || {})) {
+      if (!entry || entry.discord_id !== cleanDiscordId) continue;
+      const cur = Array.isArray(entry.scripts) ? entry.scripts : [];
+      const next = cur.filter((script) => !removed.includes(script));
+      if (next.length === cur.length) continue;
+      entry.scripts = next;
+      changed += 1;
+      if (next.length === 0) emptied += 1;
+    }
+    result = { uids: changed, scripts: removed, emptied };
+  });
+  return result;
+}
+
+async function revokeUnheldRoleScripts({ discordId, heldRoleIds = [], keepScripts = [] }) {
+  const cleanDiscordId = typeof discordId === 'string' ? discordId.trim() : '';
+  if (!DISCORD_ID_RE.test(cleanDiscordId)) return { uids: 0, scripts: [], emptied: 0 };
+
+  let result = { uids: 0, scripts: [], emptied: 0 };
+  await store.update((db) => {
+    const rules = getRoleRules(db);
+    const held = normalizeRoleIds(heldRoleIds);
+    const keep = new Set(
+      Array.isArray(keepScripts) ? keepScripts.filter((s) => typeof s === 'string') : []
+    );
+    rules.filter((r) => held.includes(r.role_id)).forEach((r) => r.scripts.forEach((s) => keep.add(s)));
+    const removable = Array.from(
+      new Set(rules.filter((r) => !held.includes(r.role_id)).flatMap((r) => r.scripts))
+    ).filter((s) => !keep.has(s));
+    if (removable.length === 0) return;
+
+    let changed = 0;
+    let emptied = 0;
+    for (const entry of Object.values(db.whitelist || {})) {
+      if (!entry || entry.discord_id !== cleanDiscordId) continue;
+      const cur = Array.isArray(entry.scripts) ? entry.scripts : [];
+      const next = cur.filter((script) => !removable.includes(script));
+      if (next.length === cur.length) continue;
+      entry.scripts = next;
+      changed += 1;
+      if (next.length === 0) emptied += 1;
+    }
+    result = { uids: changed, scripts: removable, emptied };
+  });
+  return result;
+}
+
 async function resolveScripts(requested) {
   const data = await store.read();
   const files = await store.listScripts();
@@ -235,7 +307,8 @@ async function addBuyerUid({
     if (existing) {
       existing.status = 'active';
       existing.discord_id = cleanDiscordId;
-      existing.scripts = Array.from(new Set([...(existing.scripts || []), ...scripts]));
+      /* !add bersifat final: script lama dari role lain tidak boleh ikut terbawa. */
+      existing.scripts = [...scripts];
       if (cleanName && !existing.note) existing.note = cleanName;
     } else {
       db.whitelist[cleanUid] = {
@@ -394,5 +467,7 @@ module.exports = {
   removeBuyerUid,
   getRoleRules,
   grantRoleScriptsToUids,
+  revokeRoleScriptsFromUids,
+  revokeUnheldRoleScripts,
   getBuyerQuotaOverview: (data, discordId) => quotaScopes(data, discordId),
 };

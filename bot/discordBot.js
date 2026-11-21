@@ -220,7 +220,7 @@ function startDiscordBot() {
               `Role ${role.name} belum punya script di panel Bot.`
             );
           }
-          if (!member.roles.cache.has(role.id) && !isAdmin) {
+          if (!member.roles.cache.has(role.id)) {
             return replyEmbed(message, COLORS.err, 'Akses Ditolak', `Role ${role.name} bukan role buyer kamu.`);
           }
           selectedRules = [rule];
@@ -264,6 +264,15 @@ function startDiscordBot() {
           requestedScripts = defaultScripts.length > 0 ? defaultScripts : undefined;
         }
 
+        let cleaned = { uids: 0, scripts: [] };
+        if (roleScripts.length > 0) {
+          cleaned = await buyerQuota.revokeUnheldRoleScripts({
+            discordId: message.author.id,
+            heldRoleIds: roleScripts.filter((r) => member.roles.cache.has(r.role_id)).map((r) => r.role_id),
+            keepScripts: defaultScripts,
+          });
+        }
+
         const { body } = await buyerQuota.addBuyerUid({
           uid,
           discordId: message.author.id,
@@ -287,6 +296,13 @@ function startDiscordBot() {
           { name: 'Kuota', value: quotaValue, inline: false },
           { name: 'Script Aktif', value: `\`${(body.scripts || []).join(', ') || '-'}\``, inline: false },
         ];
+        if (cleaned.scripts.length > 0) {
+          fields.push({
+            name: 'Akses Role Dicabut',
+            value: `\`${cleaned.scripts.join(', ')}\` dari ${cleaned.uids} UID`,
+            inline: false,
+          });
+        }
         if (matchedLabels.length > 0) {
           fields.push({ name: 'Role', value: matchedLabels.join(', '), inline: false });
         }
@@ -418,10 +434,34 @@ function startDiscordBot() {
         }
 
         await targetMember.roles.remove(role, `Dicabut oleh ${message.author.tag} via ${prefix}delrole`);
-        return replyEmbed(message, COLORS.ok, 'Role Dicabut', null, [
+        const remainingRoleIds = roleScripts
+          .filter((r) => r.role_id !== role.id && targetMember.roles.cache.has(r.role_id))
+          .map((r) => r.role_id);
+        const revoked = await buyerQuota.revokeRoleScriptsFromUids({
+          discordId: targetMember.id,
+          roleId: role.id,
+          keepRoleIds: remainingRoleIds,
+          keepScripts: defaultScripts,
+        });
+        const fields = [
           { name: 'Buyer', value: `<@${targetMember.id}>`, inline: true },
           { name: 'Role', value: `<@&${role.id}>`, inline: true },
-        ]);
+        ];
+        if (revoked.scripts.length > 0) {
+          fields.push({
+            name: 'Script Dicabut',
+            value: `\`${revoked.scripts.join(', ')}\` dari ${revoked.uids} UID`,
+            inline: false,
+          });
+        }
+        if (revoked.emptied > 0) {
+          fields.push({
+            name: 'Perhatian',
+            value: `${revoked.emptied} UID tidak punya script lagi. Beri role lain atau daftar ulang.`,
+            inline: false,
+          });
+        }
+        return replyEmbed(message, COLORS.ok, 'Role Dicabut', null, fields);
       }
 
       if (cmd === 'setmax') {
