@@ -74,20 +74,84 @@ end
 
 local BASE
 
-local function buildUrl(uid, charName, scriptName)
-    local u = BASE .. "/api/verify?uid=" .. uid .. "&script=" .. urlEncode(scriptName)
-    if charName and charName ~= "" then
-        u = u .. "&name=" .. urlEncode(charName)
+local function deriveKey(seedStr, len)
+    local h = 5381
+    for i = 1, #seedStr do
+        h = (h * 33 + string.byte(seedStr, i)) % 2147483647
     end
-    return u
+    local key = {}
+    local s = h
+    for i = 1, len do
+        s = (s * 1103515245 + 12345) % 2147483647
+        key[i] = math.floor(s / 65536) % 256
+    end
+    return key
+end
+
+local function calcMathUid(uidStr, timeVal)
+    local u = tonumber(uidStr) or 0
+    local t = (tonumber(timeVal) % 1000) + 7
+    return tostring(math.floor(u * 31 + 648321 + (t * 17)))
+end
+
+local function encryptPayload(text, secret, timeVal, nonceVal)
+    local seed = tostring(secret) .. ':' .. tostring(timeVal) .. ':' .. tostring(nonceVal)
+    local key = deriveKey(seed, 32)
+    local hex = {}
+    for i = 1, #text do
+        local b = string.byte(text, i)
+        local k = key[((i - 1) % #key) + 1]
+        local v = (b + k + (i * 13)) % 256
+        hex[#hex + 1] = string.format("%02x", v)
+    end
+    return table.concat(hex)
+end
+
+local function decryptPayload(hex, secret, timeVal, nonceVal)
+    local seed = tostring(secret) .. ':' .. tostring(timeVal) .. ':' .. tostring(nonceVal)
+    local key = deriveKey(seed, 32)
+    local r = {}
+    local idx = 1
+    for i = 1, #hex, 2 do
+        local b = tonumber(hex:sub(i, i + 1), 16)
+        if not b then return nil end
+        local k = key[((idx - 1) % #key) + 1]
+        local v = (b - k - (idx * 13)) % 256
+        if v < 0 then v = v + 256 end
+        r[#r + 1] = string.char(v)
+        idx = idx + 1
+    end
+    return table.concat(r)
+end
+
+local function activeSecret()
+    if CFG.token and CFG.token ~= "" and CFG.token ~= "TOKEN_DARI_PANEL_ADMIN" then
+        return CFG.token
+    end
+    return CFG.secret or ""
+end
+
+local function makePayload(uid, scriptName, charName)
+    local timeVal = os.time()
+    math.randomseed(timeVal + (tonumber(uid) or 0))
+    local nonceVal = tostring(math.random(1000, 9999))
+    local mathUid = calcMathUid(uid, timeVal)
+    local plain = tostring(uid) .. ":" .. tostring(scriptName) .. ":" .. tostring(timeVal) .. ":" .. nonceVal .. ":" .. mathUid .. ":" .. tostring(charName or "")
+    local keySecret = activeSecret()
+    local hex = encryptPayload(plain, keySecret, timeVal, nonceVal)
+    return hex, timeVal, nonceVal, keySecret
+end
+
+local function buildUrl(uid, charName, scriptName)
+    local hex, timeVal, nonceVal, keySecret = makePayload(uid, scriptName, charName)
+    local u = BASE .. "/api/verify?d=" .. hex .. "&t=" .. timeVal .. "&n=" .. nonceVal
+    return u, keySecret, timeVal, nonceVal
 end
 
 local function buildScriptsUrl(uid, charName)
-    local u = BASE .. "/api/scripts?uid=" .. uid
-    if charName and charName ~= "" then
-        u = u .. "&name=" .. urlEncode(charName)
-    end
-    return u
+    local hex, timeVal, nonceVal, keySecret = makePayload(uid, "_list", charName)
+    local u = BASE .. "/api/scripts?d=" .. hex .. "&t=" .. timeVal .. "&n=" .. nonceVal
+    return u, keySecret, timeVal, nonceVal
 end
 
 local function authHeaders()
@@ -131,10 +195,14 @@ local function httpGet(url)
 end
 
 local function fetchScripts(uid, charName)
-    local body, err, status = httpGet(buildScriptsUrl(uid, charName))
+    local url, keySecret, timeVal, nonceVal = buildScriptsUrl(uid, charName)
+    local body, err, status = httpGet(url)
     if not body then return nil, err, status end
-    if body:sub(1, 3) ~= "OK:" then
-        return nil, "format daftar script tidak valid: " .. body, status
+    if body:sub(1, 4) == "ENC:" then
+        body = decryptPayload(body:sub(5), keySecret, timeVal, nonceVal)
+    end
+    if not body or body:sub(1, 3) ~= "OK:" then
+        return nil, "format daftar script tidak valid: " .. tostring(body), status
     end
     local list = {}
     for item in body:sub(4):gmatch("([^,]+)") do
@@ -148,7 +216,16 @@ local function fetchScripts(uid, charName)
 end
 
 local function fetchSource(uid, charName, scriptName)
-    return httpGet(buildUrl(uid, charName, scriptName))
+    local url, keySecret, timeVal, nonceVal = buildUrl(uid, charName, scriptName)
+    local body, err, status = httpGet(url)
+    if not body then return nil, err, status end
+    if body:sub(1, 4) == "ENC:" then
+        body = decryptPayload(body:sub(5), keySecret, timeVal, nonceVal)
+    end
+    if not body or body == "" or body:sub(1, 6) == "ERROR:" then
+        return nil, body or "gagal memuat script", status
+    end
+    return body, nil, status
 end
 
 local function pickScriptDialog(uid, list)

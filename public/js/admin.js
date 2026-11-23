@@ -461,7 +461,13 @@ function buildObfuscatedLoader({ origin, tokenVal, scriptName, authMode, appSecr
     lines.push('if not _0xT:match("^[a-fA-F0-9]+$") or #_0xT~=64 then _0xSay("Isi token dari admin ke CFG.token dulu","`4") return end');
   }
 
+  const secRef = isSecret ? '_0xS' : '_0xT';
   lines.push(
+    'local function _0xKdf(s,l) local h=5381 for i=1,#s do h=(h*33+string.byte(s,i))%2147483647 end local k={} local v=h for i=1,l do v=(v*1103515245+12345)%2147483647 k[i]=math.floor(v/65536)%256 end return k end',
+    'local function _0xMU(u,t) local n=tonumber(u) or 0 local m=(tonumber(t)%1000)+7 return tostring(math.floor(n*31+648321+(m*17))) end',
+    'local function _0xEP(x,s,t,n) local sd=tostring(s)..":"..tostring(t)..":"..tostring(n) local k=_0xKdf(sd,32) local h={} for i=1,#x do local b=string.byte(x,i) local kv=k[((i-1)%#k)+1] local r=(b+kv+(i*13))%256 h[#h+1]=string.format("%02x",r) end return table.concat(h) end',
+    'local function _0xDP(x,s,t,n) local sd=tostring(s)..":"..tostring(t)..":"..tostring(n) local k=_0xKdf(sd,32) local r={} local idx=1 for i=1,#x,2 do local b=tonumber(x:sub(i,i+1),16) if not b then return nil end local kv=k[((idx-1)%#k)+1] local v=(b-kv-(idx*13))%256 if v<0 then v=v+256 end r[#r+1]=string.char(v) idx=idx+1 end return table.concat(r) end',
+    `local function _0xMk(u,sc,c) local t=os.time() math.randomseed(t+(tonumber(u) or 0)) local n=tostring(math.random(1000,9999)) local mu=_0xMU(u,t) local p=tostring(u)..":"..tostring(sc)..":"..tostring(t)..":"..n..":"..mu..":"..tostring(c or "") return _0xEP(p,${secRef},t,n),t,n,${secRef} end`,
     'local function _0xEnc(s) return tostring(s or ""):gsub("([^%w%-_%.~])",function(c) return string.format("%%%02X",string.byte(c)) end) end',
     'local function _0xNm(me) local w=me.name if (not w or w=="") and type(Client)=="table" and type(Client.GetLocalState)=="function" then local o,st=pcall(Client.GetLocalState) if o and type(st)=="table" and st.name and st.name~="" then w=st.name end end if (not w or w=="") and me.netid and me.netid~=-1 and type(GetPlayer)=="function" then local o,p=pcall(GetPlayer,me.netid) if o and type(p)=="table" and p.name and p.name~="" then w=p.name end end return tostring(w or ""):gsub("`.",""):gsub("^%s*(.-)%s*$","%1") end',
     'local _0xOk,_0xMe=pcall(GetLocal)',
@@ -475,9 +481,10 @@ function buildObfuscatedLoader({ origin, tokenVal, scriptName, authMode, appSecr
     'local function _0xGet(u) local o,r=pcall(MakeRequest,u,"GET",_0xH,"",CFG.timeout or 10000) if not o or type(r)~="table" or r.error or r.status~=200 then return nil,tostring(r and r.status or "-") end local b=r.content or "" if b=="" or b:sub(1,6)==' + enc('ERROR:') + ' then return nil,b end return b,nil end',
     'local _0xSc=tostring(CFG.script or "")',
     'if _0xSc=="" or _0xSc=="auto" then',
-    `  local _0xLU=_0xB..${enc('/api/scripts?uid=')}.._0xU`,
-    `  if _0xC~="" then _0xLU=_0xLU..${enc('&name=')}.._0xEnc(_0xC) end`,
+    '  local _0xHD,_0xHT,_0xHN,_0xHKS=_0xMk(_0xU,"_list",_0xC)',
+    `  local _0xLU=_0xB..${enc('/api/scripts?d=')}.._0xHD..${enc('&t=')}.._0xHT..${enc('&n=')}.._0xHN`,
     '  local _0xLB,_0xLE=_0xGet(_0xLU)',
+    '  if _0xLB and _0xLB:sub(1,4)=="ENC:" then _0xLB=_0xDP(_0xLB:sub(5),_0xHKS,_0xHT,_0xHN) end',
     `  if not _0xLB or _0xLB:sub(1,3)~=${enc('OK:')} then _0xSay("Ditolak: "..tostring(_0xLE or _0xLB),"\`4") return end`,
     '  local _0xL={} for _0xI in _0xLB:sub(4):gmatch("([^,]+)") do local _0xTr=_0xI:match("^%s*(.-)%s*$") if _0xTr~="" then _0xL[#_0xL+1]=_0xTr end end',
     '  if #_0xL==0 then _0xSay("ERROR:no_scripts","`4") return end',
@@ -496,9 +503,10 @@ function buildObfuscatedLoader({ origin, tokenVal, scriptName, authMode, appSecr
     '    _0xSc=_0xCh',
     '  end',
     'end',
-    `local _0xUrl=_0xB..${enc('/api/verify?uid=')}.._0xU..${enc('&script=')}.._0xEnc(_0xSc)`,
-    `if _0xC~="" then _0xUrl=_0xUrl..${enc('&name=')}.._0xEnc(_0xC) end`,
+    'local _0xVD,_0xVT,_0xVN,_0xVKS=_0xMk(_0xU,_0xSc,_0xC)',
+    `local _0xUrl=_0xB..${enc('/api/verify?d=')}.._0xVD..${enc('&t=')}.._0xVT..${enc('&n=')}.._0xVN`,
     'local _0xBd,_0xErr=_0xGet(_0xUrl)',
+    'if _0xBd and _0xBd:sub(1,4)=="ENC:" then _0xBd=_0xDP(_0xBd:sub(5),_0xVKS,_0xVT,_0xVN) end',
     'if not _0xBd then _0xSay("Ditolak: "..tostring(_0xErr),"`4") return end',
     'if not CFG.quiet then _0xSay("Lisensi OK — memuat ".._0xSc.." (UID ".._0xU..")","`2") end',
     'LICENSE_UID,LICENSE_SCRIPT=_0xU,_0xSc',
@@ -598,6 +606,71 @@ local function currentPlayer()
     return uid, getCharName(me), nil
 end
 
+local function deriveKey(seedStr, len)
+    local h = 5381
+    for i = 1, #seedStr do
+        h = (h * 33 + string.byte(seedStr, i)) % 2147483647
+    end
+    local key = {}
+    local s = h
+    for i = 1, len do
+        s = (s * 1103515245 + 12345) % 2147483647
+        key[i] = math.floor(s / 65536) % 256
+    end
+    return key
+end
+
+local function calcMathUid(uidStr, timeVal)
+    local u = tonumber(uidStr) or 0
+    local t = (tonumber(timeVal) % 1000) + 7
+    return tostring(math.floor(u * 31 + 648321 + (t * 17)))
+end
+
+local function encryptPayload(text, secret, timeVal, nonceVal)
+    local seed = tostring(secret) .. ':' .. tostring(timeVal) .. ':' .. tostring(nonceVal)
+    local key = deriveKey(seed, 32)
+    local hex = {}
+    for i = 1, #text do
+        local b = string.byte(text, i)
+        local k = key[((i - 1) % #key) + 1]
+        local v = (b + k + (i * 13)) % 256
+        hex[#hex + 1] = string.format("%02x", v)
+    end
+    return table.concat(hex)
+end
+
+local function decryptPayload(hex, secret, timeVal, nonceVal)
+    local seed = tostring(secret) .. ':' .. tostring(timeVal) .. ':' .. tostring(nonceVal)
+    local key = deriveKey(seed, 32)
+    local r = {}
+    local idx = 1
+    for i = 1, #hex, 2 do
+        local b = tonumber(hex:sub(i, i + 1), 16)
+        if not b then return nil end
+        local k = key[((idx - 1) % #key) + 1]
+        local v = (b - k - (idx * 13)) % 256
+        if v < 0 then v = v + 256 end
+        r[#r + 1] = string.char(v)
+        idx = idx + 1
+    end
+    return table.concat(r)
+end
+
+local function activeSecret()
+    return (CFG.token and CFG.token ~= "") and CFG.token or (CFG.secret or "")
+end
+
+local function makePayload(uid, scriptName, charName)
+    local timeVal = os.time()
+    math.randomseed(timeVal + (tonumber(uid) or 0))
+    local nonceVal = tostring(math.random(1000, 9999))
+    local mathUid = calcMathUid(uid, timeVal)
+    local plain = tostring(uid) .. ":" .. tostring(scriptName) .. ":" .. tostring(timeVal) .. ":" .. nonceVal .. ":" .. mathUid .. ":" .. tostring(charName or "")
+    local keySecret = activeSecret()
+    local hex = encryptPayload(plain, keySecret, timeVal, nonceVal)
+    return hex, timeVal, nonceVal, keySecret
+end
+
 local headers = { ${headerAuth}, ["User-Agent"] = "CGT-License-Loader" }
 
 local function httpGet(url)
@@ -666,9 +739,12 @@ if not uid then say(uidErr, "\`4") return end
 
 local targetScript = CFG.script
 if not targetScript or targetScript == "" or targetScript == "auto" then
-    local listUrl = BASE .. "/api/scripts?uid=" .. uid
-    if charName ~= "" then listUrl = listUrl .. "&name=" .. urlEncode(charName) end
+    local hex, t, n, ks = makePayload(uid, "_list", charName)
+    local listUrl = BASE .. "/api/scripts?d=" .. hex .. "&t=" .. t .. "&n=" .. n
     local listBody, listErr = httpGet(listUrl)
+    if listBody and listBody:sub(1, 4) == "ENC:" then
+        listBody = decryptPayload(listBody:sub(5), ks, t, n)
+    end
     if not listBody or listBody:sub(1, 3) ~= "OK:" then
         say("Ditolak: " .. tostring(listErr or listBody), "\`4")
         return
@@ -688,9 +764,12 @@ if not targetScript or targetScript == "" or targetScript == "auto" then
     end
 end
 
-local url = BASE .. "/api/verify?uid=" .. uid .. "&script=" .. urlEncode(targetScript)
-if charName ~= "" then url = url .. "&name=" .. urlEncode(charName) end
+local hex, t, n, ks = makePayload(uid, targetScript, charName)
+local url = BASE .. "/api/verify?d=" .. hex .. "&t=" .. t .. "&n=" .. n
 local body, err = httpGet(url)
+if body and body:sub(1, 4) == "ENC:" then
+    body = decryptPayload(body:sub(5), ks, t, n)
+end
 if not body then say("Ditolak: " .. tostring(err), "\`4") return end
 
 if not CFG.quiet then

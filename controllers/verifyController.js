@@ -15,6 +15,7 @@ const store = require('../db/store');
 const safeEqual = require('../middleware/safeEqual');
 const asyncHandler = require('../middleware/asyncHandler');
 const discordWebhook = require('../utils/discordWebhook');
+const cryptoPayload = require('../utils/cryptoPayload');
 
 const UID_RE = /^\d{1,19}$/;
 
@@ -123,15 +124,91 @@ function uidAllowed(entry, uid) {
   return UID_RE.test(uid) && uid.length >= MIN_FIRST_LOCK_DIGITS;
 }
 
-async function authenticateAndCheckUid(req, data, { uid, scriptForLog }) {
+async function authenticateAndCheckUid(req, data, { scriptForLog }) {
   const rawToken = req.get('x-buyer-token');
   const token = rawToken ? store.findToken(data, rawToken) : null;
   const via = token ? 'token' : 'secret';
   const webhookUrl = data.settings.discord_webhook || process.env.DISCORD_WEBHOOK_URL || '';
-  const charName = cleanCharName(req.query.name);
+  const secret = data.settings.app_secret || process.env.APP_SECRET || '';
+  const secretKey = token ? token.token : secret;
+
+  // Cek apakah request menggunakan encrypted dynamic payload (?d=...&t=...&n=...)
+  const hex = typeof req.query.d === 'string' ? req.query.d.trim() : (typeof req.query.p === 'string' ? req.query.p.trim() : '');
+  let uid = '';
+  let script = scriptForLog;
+  let charName = '';
+  let timeVal = '';
+  let nonceVal = '';
+  let isEncrypted = false;
+
+  if (hex) {
+    timeVal = typeof req.query.t === 'string' ? req.query.t.trim() : '';
+    nonceVal = typeof req.query.n === 'string' ? req.query.n.trim() : '';
+
+    if (!secretKey) {
+      return {
+        ok: false,
+        result: 'invalid_secret',
+        via,
+        token,
+        webhookUrl,
+        charName: '',
+        uid: '',
+        script: scriptForLog,
+        discordId: '',
+      };
+    }
+
+    const unpacked = cryptoPayload.verifyAndUnpackPayload({ hex, timeVal, nonceVal, secretKey });
+    if (!unpacked.ok) {
+      return {
+        ok: false,
+        result: unpacked.error,
+        via,
+        token,
+        webhookUrl,
+        charName: '',
+        uid: '',
+        script: scriptForLog,
+        discordId: '',
+      };
+    }
+
+    uid = unpacked.uid;
+    if (scriptForLog !== '_list') {
+      script = unpacked.script;
+    }
+    charName = cleanCharName(unpacked.charName || req.query.name);
+    isEncrypted = true;
+  } else {
+    // Jika tidak ada encrypted payload, cek apakah mencoba menembak dengan plaintext ?uid=
+    if (req.query.uid) {
+      return {
+        ok: false,
+        result: 'encrypted_payload_required',
+        via,
+        token,
+        webhookUrl,
+        charName: cleanCharName(req.query.name),
+        uid: typeof req.query.uid === 'string' ? req.query.uid.trim() : '',
+        script: scriptForLog,
+        discordId: '',
+      };
+    }
+    return {
+      ok: false,
+      result: 'bad_request',
+      via,
+      token,
+      webhookUrl,
+      charName: '',
+      uid: '',
+      script: scriptForLog,
+      discordId: '',
+    };
+  }
 
   if (!token) {
-    const secret = data.settings.app_secret || process.env.APP_SECRET || '';
     const provided = req.get('x-app-secret');
     if (!secret || !safeEqual(provided, secret)) {
       return {
@@ -141,8 +218,8 @@ async function authenticateAndCheckUid(req, data, { uid, scriptForLog }) {
         token: null,
         webhookUrl,
         charName,
-        uid: req.query.uid,
-        script: scriptForLog,
+        uid,
+        script,
         discordId: '',
       };
     }
@@ -157,7 +234,7 @@ async function authenticateAndCheckUid(req, data, { uid, scriptForLog }) {
       webhookUrl,
       charName,
       uid,
-      script: scriptForLog,
+      script,
       discordId: '',
     };
   }
@@ -165,22 +242,22 @@ async function authenticateAndCheckUid(req, data, { uid, scriptForLog }) {
   const entry = data.whitelist[uid];
   const discordId = (entry && entry.discord_id) || '';
   if (!entry) {
-    return { ok: false, result: 'not_found', via, token, webhookUrl, charName, uid, script: scriptForLog, discordId };
+    return { ok: false, result: 'not_found', via, token, webhookUrl, charName, uid, script, discordId };
   }
   if (entry.status !== 'active') {
-    return { ok: false, result: 'banned', via, token, webhookUrl, charName, uid, script: scriptForLog, discordId };
+    return { ok: false, result: 'banned', via, token, webhookUrl, charName, uid, script, discordId };
   }
 
   /* token sudah terkunci ke UID lain: tolak sebelum menyentuh script/file */
   const allowedUids = tokenAllowedUids(token);
   if (token && allowedUids.length > 0 && !allowedUids.includes(uid)) {
-    return { ok: false, result: 'uid_locked', via, token, webhookUrl, charName, uid, script: scriptForLog, discordId };
+    return { ok: false, result: 'uid_locked', via, token, webhookUrl, charName, uid, script, discordId };
   }
   if (token && allowedUids.length === 0 && !uidAllowed(entry, uid)) {
-    return { ok: false, result: 'uid_not_allowed', via, token, webhookUrl, charName, uid, script: scriptForLog, discordId };
+    return { ok: false, result: 'uid_not_allowed', via, token, webhookUrl, charName, uid, script, discordId };
   }
 
-  return { ok: true, entry, token, via, webhookUrl, charName, uid, discordId };
+  return { ok: true, entry, token, via, webhookUrl, charName, uid, script, discordId, isEncrypted, secretKey, timeVal, nonceVal };
 }
 
 exports.listScripts = asyncHandler(async (req, res) => {
@@ -188,8 +265,7 @@ exports.listScripts = asyncHandler(async (req, res) => {
   res.set('Cache-Control', 'no-store');
 
   const data = await store.read();
-  const uid = typeof req.query.uid === 'string' ? req.query.uid.trim() : '';
-  const auth = await authenticateAndCheckUid(req, data, { uid, scriptForLog: '_list' });
+  const auth = await authenticateAndCheckUid(req, data, { scriptForLog: '_list' });
 
   if (!auth.ok) {
     await emitFailure(req, auth);
@@ -211,6 +287,11 @@ exports.listScripts = asyncHandler(async (req, res) => {
     return res.send('ERROR:no_scripts');
   }
 
+  if (auth.isEncrypted) {
+    const encList = cryptoPayload.encryptPayload(`OK:${list.join(',')}`, auth.secretKey, auth.timeVal, auth.nonceVal);
+    return res.send(`ENC:${encList}`);
+  }
+
   return res.send(`OK:${list.join(',')}`);
 });
 
@@ -219,16 +300,15 @@ exports.verify = asyncHandler(async (req, res) => {
   res.set('Cache-Control', 'no-store');
 
   const data = await store.read();
-  const uid = typeof req.query.uid === 'string' ? req.query.uid.trim() : '';
-  const script = typeof req.query.script === 'string' ? req.query.script.trim() : '';
-
-  const auth = await authenticateAndCheckUid(req, data, { uid, scriptForLog: script });
+  const auth = await authenticateAndCheckUid(req, data, {
+    scriptForLog: typeof req.query.script === 'string' ? req.query.script.trim() : '_verify',
+  });
   if (!auth.ok) {
     await emitFailure(req, auth);
     return res.send(`ERROR:${auth.result}`);
   }
 
-  const { entry, token, via, webhookUrl, charName, discordId } = auth;
+  const { entry, token, via, webhookUrl, charName, discordId, uid, script, isEncrypted, secretKey, timeVal, nonceVal } = auth;
 
   if (!store.isSafeName(script)) {
     await emitFailure(req, { uid, charName, script, result: 'bad_request', via, token, webhookUrl, discordId });
@@ -316,5 +396,9 @@ exports.verify = asyncHandler(async (req, res) => {
   }
 
   logResult(uid, script, 'ok', via);
+  if (isEncrypted) {
+    const encSource = cryptoPayload.encryptPayload(source, secretKey, timeVal, nonceVal);
+    return res.send(`ENC:${encSource}`);
+  }
   return res.send(source);
 });
