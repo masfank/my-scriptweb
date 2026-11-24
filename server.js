@@ -5,6 +5,7 @@ require('dotenv').config();
 const path = require('path');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
+const fs = require('fs');
 const express = require('express');
 const helmet = require('helmet');
 const cookieSession = require('cookie-session');
@@ -14,6 +15,17 @@ const { startDiscordBot, stopDiscordBot } = require('./bot/discordBot');
 const publicRoutes = require('./routes/public');
 const authRoutes = require('./routes/auth');
 const adminRoutes = require('./routes/admin');
+
+/* Versi aset = hash isi file. Query string di view ikut berubah setiap kali
+ * admin.js/admin.css diedit, jadi browser tidak memakai salinan cache lama. */
+function assetVersion(relPath) {
+  try {
+    const buf = fs.readFileSync(path.join(__dirname, relPath));
+    return crypto.createHash('sha1').update(buf).digest('hex').slice(0, 10);
+  } catch {
+    return 'dev';
+  }
+}
 
 function createApp(sessionSecret) {
   const app = express();
@@ -51,6 +63,8 @@ function createApp(sessionSecret) {
 
   app.set('view engine', 'ejs');
   app.set('views', path.join(__dirname, 'views'));
+  app.locals.adminJsVersion = assetVersion('public/js/admin.js');
+  app.locals.adminCssVersion = assetVersion('public/css/admin.css');
 
   app.use(express.urlencoded({ extended: false, limit: '5mb' }));
   app.use(express.json({ limit: '1mb' }));
