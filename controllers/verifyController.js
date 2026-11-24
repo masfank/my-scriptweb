@@ -130,7 +130,8 @@ async function authenticateAndCheckUid(req, data, { scriptForLog }) {
   const via = token ? 'token' : 'secret';
   const webhookUrl = data.settings.discord_webhook || process.env.DISCORD_WEBHOOK_URL || '';
   const secret = data.settings.app_secret || process.env.APP_SECRET || '';
-  const secretKey = token ? token.token : secret;
+  /* Token hanya disimpan sebagai SHA-256, jadi kunci payload = token mentah dari header. */
+  const secretKey = token ? rawToken : secret;
 
   // Cek apakah request menggunakan encrypted dynamic payload (?d=...&t=...&n=...)
   const hex = typeof req.query.d === 'string' ? req.query.d.trim() : (typeof req.query.p === 'string' ? req.query.p.trim() : '');
