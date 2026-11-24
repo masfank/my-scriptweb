@@ -99,6 +99,7 @@ router.post('/tokens/:id/delete', tokens.remove);
 
 router.get('/secret', requireOwner, settings.show);
 router.post('/secret/rotate', requireOwner, settings.rotate);
+router.post('/secret/legacy', requireOwner, settings.setLegacy);
 
 /* kelola akun admin & leader (khusus Admin) */
 router.get('/users', requireOwner, users.list);

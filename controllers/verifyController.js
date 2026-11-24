@@ -17,6 +17,7 @@ const asyncHandler = require('../middleware/asyncHandler');
 const discordWebhook = require('../utils/discordWebhook');
 const cryptoPayload = require('../utils/cryptoPayload');
 const { clientIp } = require('../utils/clientIp');
+const { legacyPlaintextEnabled } = require('../utils/legacyFlag');
 
 const UID_RE = /^\d{1,19}$/;
 
@@ -148,13 +149,13 @@ async function authenticateAndCheckUid(req, data, { scriptForLog }) {
     charName = cleanCharName(unpacked.charName || req.query.name);
     isEncrypted = true;
   } else {
-    /* Jalur plaintext hanya hidup kalau LEGACY_PLAINTEXT=1. Dipakai sebagai jendela
-     * migrasi: buyer yang belum sempat ganti loader tetap bisa jalan seperti panel
-     * versi lama, dengan syarat X-App-Secret global cocok. Default mati. */
+    /* Jalur plaintext hanya hidup kalau saklar migrasi menyala. Nilainya diatur
+     * dari panel (/admin/secret); env LEGACY_PLAINTEXT hanya fallback kalau
+     * pengaturan belum pernah disimpan, supaya deploy lama tetap bisa memaksa. */
     if (req.query.uid) {
       const provided = req.get('x-app-secret');
       const legacyAllowed =
-        process.env.LEGACY_PLAINTEXT === '1' &&
+        legacyPlaintextEnabled(data) &&
         !rawToken &&
         Boolean(secret) &&
         safeEqual(provided, secret);

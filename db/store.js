@@ -156,6 +156,9 @@ function validateShape(data) {
   if (data.settings.discord_webhook !== undefined && typeof data.settings.discord_webhook !== 'string') {
     fail('settings.discord_webhook harus string');
   }
+  if (data.settings.legacy_plaintext !== undefined && typeof data.settings.legacy_plaintext !== 'boolean') {
+    fail('settings.legacy_plaintext harus boolean');
+  }
   if (data.settings.bot_config !== undefined && !isPlainObject(data.settings.bot_config)) {
     fail('settings.bot_config harus object');
   }

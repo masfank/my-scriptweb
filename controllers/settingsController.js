@@ -4,6 +4,7 @@ const crypto = require('crypto');
 const store = require('../db/store');
 const asyncHandler = require('../middleware/asyncHandler');
 const discordWebhook = require('../utils/discordWebhook');
+const { legacyPlaintextEnabled } = require('../utils/legacyFlag');
 
 function currentSecret(data) {
   if (data.settings.app_secret) {
@@ -22,6 +23,8 @@ exports.show = asyncHandler(async (req, res) => {
     secret: current.secret,
     apiToken: adminRecord ? adminRecord.api_token : '',
     fromEnv: current.fromEnv,
+    legacyEnabled: legacyPlaintextEnabled(data),
+    legacyFromEnv: data.settings.legacy_plaintext === undefined && process.env.LEGACY_PLAINTEXT === '1',
     msg: typeof req.query.ok === 'string' ? req.query.ok : null,
     err: typeof req.query.err === 'string' ? req.query.err : null,
   });
@@ -33,6 +36,17 @@ exports.rotate = asyncHandler(async (req, res) => {
     data.settings.app_secret = secret;
   });
   res.redirect('/admin/secret?ok=' + encodeURIComponent('Secret baru dibuat. Update loader semua buyer.'));
+});
+
+exports.setLegacy = asyncHandler(async (req, res) => {
+  const enabled = typeof req.body.legacy === 'string' && req.body.legacy === '1';
+  await store.update((data) => {
+    data.settings.legacy_plaintext = enabled;
+  });
+  const msg = enabled
+    ? 'Jendela plaintext AKTIF — loader versi lama diterima lagi. Matikan setelah semua buyer pindah.'
+    : 'Jendela plaintext dimatikan — hanya payload terenkripsi yang diterima.';
+  res.redirect('/admin/secret?ok=' + encodeURIComponent(msg));
 });
 
 function webhookRedirectTarget(req) {
