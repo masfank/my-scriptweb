@@ -106,6 +106,7 @@ async function authenticateAndCheckUid(req, data, { scriptForLog }) {
   let timeVal = '';
   let nonceVal = '';
   let isEncrypted = false;
+  let legacyPlaintext = false;
 
   if (hex) {
     timeVal = typeof req.query.t === 'string' ? req.query.t.trim() : '';
@@ -147,31 +148,48 @@ async function authenticateAndCheckUid(req, data, { scriptForLog }) {
     charName = cleanCharName(unpacked.charName || req.query.name);
     isEncrypted = true;
   } else {
-    // Jika tidak ada encrypted payload, cek apakah mencoba menembak dengan plaintext ?uid=
+    /* Jalur plaintext hanya hidup kalau LEGACY_PLAINTEXT=1. Dipakai sebagai jendela
+     * migrasi: buyer yang belum sempat ganti loader tetap bisa jalan seperti panel
+     * versi lama, dengan syarat X-App-Secret global cocok. Default mati. */
     if (req.query.uid) {
+      const provided = req.get('x-app-secret');
+      const legacyAllowed =
+        process.env.LEGACY_PLAINTEXT === '1' &&
+        !rawToken &&
+        Boolean(secret) &&
+        safeEqual(provided, secret);
+
+      if (!legacyAllowed) {
+        return {
+          ok: false,
+          result: 'encrypted_payload_required',
+          via,
+          token,
+          webhookUrl,
+          charName: cleanCharName(req.query.name),
+          uid: typeof req.query.uid === 'string' ? req.query.uid.trim() : '',
+          script: scriptForLog,
+          discordId: '',
+        };
+      }
+
+      uid = typeof req.query.uid === 'string' ? req.query.uid.trim() : '';
+      charName = cleanCharName(req.query.name);
+      isEncrypted = false;
+      legacyPlaintext = true;
+    } else {
       return {
         ok: false,
-        result: 'encrypted_payload_required',
+        result: 'bad_request',
         via,
         token,
         webhookUrl,
-        charName: cleanCharName(req.query.name),
-        uid: typeof req.query.uid === 'string' ? req.query.uid.trim() : '',
+        charName: '',
+        uid: '',
         script: scriptForLog,
         discordId: '',
       };
     }
-    return {
-      ok: false,
-      result: 'bad_request',
-      via,
-      token,
-      webhookUrl,
-      charName: '',
-      uid: '',
-      script: scriptForLog,
-      discordId: '',
-    };
   }
 
   if (!token) {
@@ -223,7 +241,7 @@ async function authenticateAndCheckUid(req, data, { scriptForLog }) {
     return { ok: false, result: 'uid_not_allowed', via, token, webhookUrl, charName, uid, script, discordId };
   }
 
-  return { ok: true, entry, token, via, webhookUrl, charName, uid, script, discordId, isEncrypted, secretKey, timeVal, nonceVal };
+  return { ok: true, entry, token, via, webhookUrl, charName, uid, script, discordId, isEncrypted, legacyPlaintext, secretKey, timeVal, nonceVal };
 }
 
 exports.listScripts = asyncHandler(async (req, res) => {
@@ -274,7 +292,7 @@ exports.verify = asyncHandler(async (req, res) => {
     return res.send(`ERROR:${auth.result}`);
   }
 
-  const { entry, token, via, webhookUrl, charName, discordId, uid, script, isEncrypted, secretKey, timeVal, nonceVal } = auth;
+  const { entry, token, via, webhookUrl, charName, discordId, uid, script, isEncrypted, legacyPlaintext, secretKey, timeVal, nonceVal } = auth;
 
   if (!store.isSafeName(script)) {
     await emitFailure(req, { uid, charName, script, result: 'bad_request', via, token, webhookUrl, discordId });
@@ -339,6 +357,7 @@ exports.verify = asyncHandler(async (req, res) => {
       token_id: token ? token.id : '',
       token_label: token ? token.label : '',
       ip,
+      detail: legacyPlaintext ? 'legacy_plaintext' : '',
     });
   } catch (err) {
     console.warn('[verify] gagal simpan log:', err.message);

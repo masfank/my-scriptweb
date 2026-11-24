@@ -55,12 +55,30 @@ data/                  # runtime, gitignored
 |`NODE_ENV`|tidak|—|`production` mengaktifkan cookie `secure`.|
 |`TRUST_PROXY`|tidak|`1`|Jumlah hop reverse proxy. `1` untuk Railway/Render/nginx. `0` untuk akses langsung.|
 |`DATA_DIR`|tidak|`./data`|Lokasi `db.json` dan `scripts/`. Di platform dengan volume, arahkan ke mount volume.|
+|`LEGACY_PLAINTEXT`|tidak|`0`|Jendela migrasi: `1` menerima request plaintext `?uid=` dari loader lama selama `X-App-Secret` global cocok. Loader lama tidak mendukung payload terenkripsi, jadi tanpa flag ini mereka ditolak `ERROR:encrypted_payload_required`.|
 
 Generate secret:
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ```
+
+
+### Migrasi loader lama
+
+Panel versi ini hanya menerima payload terenkripsi (`?d=&t=&n=`). Loader lama (plaintext
+`?uid=`) akan ditolak dengan `ERROR:encrypted_payload_required`, dan setiap percobaan tetap
+tercatat lengkap dengan UID-nya di `/admin/logs` — itu daftar buyer yang belum ganti file.
+
+Urutan yang aman:
+
+1. Edarkan `loader.lua` v2.0. Loader ini sudah dual-mode: sebelum deploy ia jatuh ke
+   plaintext sendiri (`CFG.legacy`), sesudah deploy ia memakai payload terenkripsi.
+2. Deploy panel. Buyer yang belum ganti file muncul sebagai `encrypted_payload_required`.
+3. Kalau ada yang perlu tetap online sebelum sempat ganti file, set `LEGACY_PLAINTEXT=1`
+   dan restart. Jalur plaintext kembali hidup persis seperti panel lama (butuh secret
+   global yang cocok), dan log suksesnya ditandai `detail: legacy_plaintext`.
+4. Setelah semua buyer pindah, hapus flag itu lagi.
 
 ## Setup lokal
 
