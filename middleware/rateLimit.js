@@ -24,4 +24,16 @@ const loginLimiter = rateLimit({
   },
 });
 
-module.exports = { verifyLimiter, loginLimiter };
+/* Laporan gagal dari loader di sisi buyer. Longgar: buyer di belakang NAT
+ * berbagi IP, dan satu run bisa melapor sekali per tahap. */
+const reportLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  limit: 40,
+  standardHeaders: true,
+  legacyHeaders: false,
+  handler(req, res) {
+    res.status(429).type('text/plain').send('ERROR:rate_limited');
+  },
+});
+
+module.exports = { verifyLimiter, loginLimiter, reportLimiter };

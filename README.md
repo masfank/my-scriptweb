@@ -162,6 +162,11 @@ Selalu `Content-Type: text/plain; charset=utf-8`, `Cache-Control: no-store`. Has
 |`ERROR:script_mismatch`|Script yang diminta tidak ada di daftar scripts milik UID|
 |`ERROR:script_missing`|File `data/scripts/<script>.lua` tidak ada|
 |`ERROR:token_revoked`|Token dinonaktifkan tepat saat request berjalan|
+|`ERROR:encrypted_payload_required`|Request plaintext `?uid=` — panel versi ini hanya menerima payload terenkripsi `?d=&t=&n=`|
+|`ERROR:payload_expired`|Timestamp payload lebih dari 90 detik dari jam server (cek jam device buyer)|
+|`ERROR:replay_detected`|Kombinasi uid+timestamp+nonce sudah dipakai; loader harus membuat nonce baru|
+|`ERROR:tampered_math_uid`|`mathUid` di payload tidak cocok dengan uid+timestamp|
+|`ERROR:decryption_failed` / `ERROR:malformed_payload`|Kunci payload tidak cocok (token/secret beda) atau isi payload rusak|
 |`ERROR:rate_limited`|Lebih dari 20 request/menit dari IP yang sama (HTTP 429)|
 |`ERROR:server`|Kesalahan server / `db.json` rusak (HTTP 500)|
 |*(source Lua)*|UID aktif, script cocok, file ada, token sah|
@@ -185,6 +190,14 @@ Kalau `X-Buyer-Token` dikirim dan tidak dikenal, request tidak jatuh ke secret �
 **Jangan pernah kirim token lewat `http://`.** Loader menolak `baseUrl` non-HTTPS kecuali
 `CFG.dev = true` dan hostnya `localhost`/`127.0.0.1`.
 
+### Laporan gagal dari sisi buyer
+
+Kegagalan koneksi (status 0) tidak pernah sampai ke `/api/verify`, jadi loader juga
+mengirim ringkasan ke `GET /api/report?stage=…&status=…&detail=…&uid=…&char=…`.
+Endpoint ini membatasi input (stage whitelist, detail ≤180 karakter), menulis log
+dengan hasil `client_<stage>`, dan meneruskan embed "Loader Gagal di Sisi Buyer" ke
+webhook Discord. Tanpa ini, kasus DNS/TLS/timeout tidak meninggalkan jejak apa pun.
+
 ## Contoh loader Lua
 
 Pakai `loader.lua` yang ada di repo — sudah memuat guard HTTPS, fallback `RunThread`, dan
@@ -198,6 +211,19 @@ local CFG = {
     timeout = 10000,
 }
 ```
+
+Kolom tambahan untuk diagnosis:
+
+|Field|Default|Arti|
+|---|---|---|
+|`debug`|`false`|Cetak `kind`/`status`/`code` mentah tiap kegagalan|
+|`report`|`true`|Kirim ringkasan gagal ke `/api/report` (best-effort, gagal pun diabaikan)|
+|`legacy`|`true`|Fallback plaintext sekali kalau panel masih versi lama (`ERROR:bad_request`)|
+
+Loader mencetak alasan yang bisa dibaca, misalnya
+`ditolak (200) [verify]: ERROR:uid_locked — token sudah terkunci ke UID lain`, dan untuk
+gagal konek menambahkan `timeout`, tahap, plus hasil probe `/healthz` supaya jelas apakah
+panel hidup tapi request buyer tidak sampai.
 
 Versi minimum tanpa fallback:
 

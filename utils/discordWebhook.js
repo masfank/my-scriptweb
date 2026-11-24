@@ -148,6 +148,48 @@ function sendVerifyLog(webhookUrl, info) {
   enqueueWebhook(webhookUrl.trim(), payload);
 }
 
+const STAGE_TEXT = {
+  list: 'Ambil Daftar Script',
+  verify: 'Verifikasi Script',
+  run: 'Menjalankan Script',
+  init: 'Inisialisasi Loader',
+  unknown: 'Tidak Diketahui',
+};
+
+/**
+ * Laporan gagal dari loader di device buyer — termasuk gagal konek (status 0)
+ * yang tidak pernah sampai ke /api/verify. Tanpa embed ini, operator tidak punya
+ * jejak sama sekali untuk kasus transport.
+ */
+function sendClientError(webhookUrl, info) {
+  if (!isValidWebhookUrl(webhookUrl)) return;
+
+  const stageLabel = STAGE_TEXT[info.stage] || STAGE_TEXT.unknown;
+  const detail = info.detail ? String(info.detail).slice(0, 900) : '—';
+
+  const payload = {
+    embeds: [
+      {
+        title: 'Loader Gagal di Sisi Buyer',
+        color: 0xf59e0b,
+        fields: [
+          { name: 'Tahap', value: stageLabel, inline: true },
+          { name: 'Status HTTP', value: `\`${info.status || '0'}\``, inline: true },
+          { name: 'ID (UID)', value: `\`${info.uid || '—'}\``, inline: true },
+          { name: 'Nama Char', value: info.charName ? `\`${info.charName}\`` : '`—`', inline: true },
+          { name: 'Token', value: info.tokenLabel ? `\`${info.tokenLabel}\`` : '`—`', inline: true },
+          { name: 'Alamat IP', value: `\`${info.ip || '—'}\``, inline: true },
+          { name: 'Detail', value: '```\n' + detail.replace(/```/g, "'''") + '\n```', inline: false },
+        ],
+        footer: { text: 'Lisensi UID · CGT Script Guard' },
+        timestamp: info.at || new Date().toISOString(),
+      },
+    ],
+  };
+
+  enqueueWebhook(webhookUrl.trim(), payload);
+}
+
 async function sendTestWebhook(webhookUrl) {
   if (!isValidWebhookUrl(webhookUrl)) {
     throw new Error('URL Webhook Discord tidak valid (harus https://discord.com/api/webhooks/...)');
@@ -177,5 +219,6 @@ async function sendTestWebhook(webhookUrl) {
 module.exports = {
   isValidWebhookUrl,
   sendVerifyLog,
+  sendClientError,
   sendTestWebhook,
 };

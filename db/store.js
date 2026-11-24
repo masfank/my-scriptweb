@@ -411,6 +411,7 @@ function normalizeLogEntry(entry) {
     token_id: entry.token_id ? String(entry.token_id) : '',
     token_label: entry.token_label ? String(entry.token_label).slice(0, 64) : '',
     ip: entry.ip ? String(entry.ip).slice(0, 64) : '',
+    detail: entry.detail ? String(entry.detail).replace(/[\r\n\t]+/g, ' ').slice(0, 200) : '',
   };
 }
 

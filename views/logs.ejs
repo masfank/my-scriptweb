@@ -115,13 +115,14 @@
                    row.token_id + ' ' +
                    row.ip + ' ' +
                    row.result + ' ' +
-                   row.result_label
+                   row.result_label + ' ' +
+                   (row.detail || '')
                  ).toLowerCase();
             %>
               <tr data-search="<%= searchBlob %>">
                 <td class="mono muted"><%= row.at_display %></td>
                 <td>
-                  <span class="badge <%= row.is_ok ? 'badge-active' : 'badge-banned' %>"><%= row.result_label %></span>
+                  <span class="badge <%= row.is_ok ? 'badge-active' : 'badge-banned' %>"<% if (row.detail) { %> title="<%= row.detail %>"<% } %>><%= row.result_label %></span>
                 </td>
                 <td>
                   <% if (row.uid) { %>
@@ -194,13 +195,14 @@
                row.token_id + ' ' +
                row.ip + ' ' +
                row.result + ' ' +
-               row.result_label
+               row.result_label + ' ' +
+               (row.detail || '')
              ).toLowerCase();
         %>
           <div class="uid-card" data-search="<%= searchBlob %>">
             <div class="uid-card-head">
               <code class="mono uid-code"><%= row.uid || '—' %><% if (row.char_name) { %> · <%= row.char_name %><% } %></code>
-              <span class="badge <%= row.is_ok ? 'badge-active' : 'badge-banned' %>"><%= row.result_label %></span>
+              <span class="badge <%= row.is_ok ? 'badge-active' : 'badge-banned' %>"<% if (row.detail) { %> title="<%= row.detail %>"<% } %>><%= row.result_label %></span>
             </div>
             <div class="uid-card-scripts">
               <% if (row.script) { %><span class="chip"><%= row.script %>.lua</span><% } %>

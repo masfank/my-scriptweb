@@ -5,6 +5,11 @@
 --
 -- Token dibuat per buyer di panel /admin/tokens dan mengunci ke satu UID pada
 -- verifikasi pertama. Token hanya dikirim via HTTPS.
+--
+-- Kalau gagal, loader mencetak alasan yang bisa dibaca + mengirim ringkasan ke
+-- panel (GET /api/report) supaya operator tahu masalahnya tanpa menebak-nebak.
+-- Kegagalan koneksi (status 0) tidak pernah sampai ke /api/verify, jadi hanya
+-- jalur laporan ini yang bisa menampakkannya.
 
 local CFG = {
     -- Domains without a scheme are treated as https://.
@@ -14,9 +19,13 @@ local CFG = {
     script  = "auto",                     -- "auto" = cek daftar script UID (auto-run jika 1, menu jika >1)
     timeout = 10000,                      -- 1..60000 ms
     quiet   = false,                      -- true = jangan cetak pesan sukses
+    debug   = false,                      -- true = cetak status/kind mentah tiap kegagalan
+    report  = true,                       -- kirim ringkasan gagal ke panel (/api/report)
+    legacy  = true,                       -- fallback plaintext kalau panel masih versi lama
 }
 
 local PREFIX = "`9[lisensi]`w "
+local LOADER_VERSION = "2.0"
 
 local function say(text, color)
     local c = color or "`w"
@@ -25,7 +34,7 @@ end
 
 -- Token di header dikirim lewat HTTPS (atau http://localhost untuk tes lokal).
 local function assertBaseUrl(base)
-    local b = base:gsub("/+$", "")
+    local b = tostring(base or ""):gsub("/+$", "")
     if not b:match("^%a[%w+.-]*://") then b = "https://" .. b end
     if b:match("^https://") then return b end
     if b:match("^http://localhost[:/]") or b:match("^http://localhost$")
@@ -46,16 +55,12 @@ end
 local function getCharName(me)
     local raw = me.name
     if (not raw or raw == "") and type(Client) == "table" and type(Client.GetLocalState) == "function" then
-        local okS, st = pcall(Client.GetLocalState)
-        if okS and type(st) == "table" and st.name and st.name ~= "" then
-            raw = st.name
-        end
+        local ok, state = pcall(Client.GetLocalState)
+        if ok and type(state) == "table" and state.name and state.name ~= "" then raw = state.name end
     end
     if (not raw or raw == "") and me.netid and me.netid ~= -1 and type(GetPlayer) == "function" then
-        local okP, p = pcall(GetPlayer, me.netid)
-        if okP and type(p) == "table" and p.name and p.name ~= "" then
-            raw = p.name
-        end
+        local ok, pl = pcall(GetPlayer, me.netid)
+        if ok and type(pl) == "table" and pl.name and pl.name ~= "" then raw = pl.name end
     end
     return tostring(raw or ""):gsub("`.", ""):gsub("^%s*(.-)%s*$", "%1")
 end
@@ -131,10 +136,30 @@ local function activeSecret()
     return CFG.secret or ""
 end
 
+-- Nonce harus unik per payload: server menolak (replay_detected) kalau
+-- uid+waktu+nonce pernah dipakai. os.time() cuma sampai detik, jadi dua run
+-- dalam detik yang sama akan bertabrakan. Campur jam CPU, alamat tabel, dan
+-- nomor urut; semuanya di-pcall karena tidak dijamin ada di semua build CGT.
+local nonceSeq = 0
+
+local function nonceEntropy()
+    local seed = 0
+    if type(os.clock) == "function" then
+        local c = os.clock()
+        if type(c) == "number" then seed = seed + math.floor((c % 1) * 1000000) end
+    end
+    pcall(function()
+        local addr = tostring({}):match("0x(%x+)")
+        if addr and #addr <= 12 then seed = seed + (tonumber(addr, 16) or 0) end
+    end)
+    return seed
+end
+
 local function makePayload(uid, scriptName, charName)
     local timeVal = os.time()
-    math.randomseed(timeVal + (tonumber(uid) or 0))
-    local nonceVal = tostring(math.random(1000, 9999))
+    nonceSeq = nonceSeq + 1
+    math.randomseed(timeVal + ((tonumber(uid) or 0) % 100000) * 31 + nonceSeq)
+    local nonceVal = tostring((math.random(100000, 9999999) + nonceEntropy() * 7 + nonceSeq * 131) % 1000000007)
     local mathUid = calcMathUid(uid, timeVal)
     local plain = tostring(uid) .. ":" .. tostring(scriptName) .. ":" .. tostring(timeVal) .. ":" .. nonceVal .. ":" .. mathUid .. ":" .. tostring(charName or "")
     local keySecret = activeSecret()
@@ -166,66 +191,222 @@ local function authHeaders()
     return h
 end
 
--- Argumen wajib sesuai dokumentasi CGT:
---   MakeRequest(url, method, headers, content, timeout_ms)
-local function httpGet(url)
+--[[ ---------------------------------------------------------------------------
+ * Diagnostik.
+ *
+ * Setiap kegagalan dikembalikan sebagai tabel { kind, status, code, detail }
+ * supaya bisa dicetak dengan bahasa manusia dan dilaporkan ke panel, bukan
+ * cuma "gagal". kind:
+ *   call      — MakeRequest tidak bisa dipanggil / error Lua
+ *   transport — tidak ada respons HTTP (status 0, DNS/TLS/timeout)
+ *   http      — server membalas selain 200
+ *   empty     — body kosong
+ *   license   — server membalas ERROR:<kode>
+ *   crypto    — balasan ENC tidak bisa didekripsi
+ *   frame     — format balasan tidak dikenal
+---------------------------------------------------------------------------- ]]
+
+local REASONS = {
+    invalid_secret = "secret/token tidak cocok atau sudah dirotasi",
+    not_found = "UID belum masuk whitelist",
+    banned = "UID diblokir (status banned)",
+    uid_locked = "token sudah terkunci ke UID lain",
+    uid_not_allowed = "UID ini tidak diizinkan untuk token tsb",
+    script_mismatch = "script tidak terdaftar untuk UID ini",
+    script_missing = "file script hilang di server",
+    no_scripts = "UID tidak punya script",
+    encrypted_payload_required = "server menolak request plaintext",
+    bad_request = "format request tidak dikenali server",
+    decryption_failed = "kunci enkripsi tidak cocok",
+    payload_expired = "jam device tidak sinkron (selisih >90 detik)",
+    replay_detected = "payload duplikat (retry terlalu cepat)",
+    tampered_math_uid = "payload rusak / dimodifikasi",
+    rate_limited = "kena rate limit (terlalu banyak request per menit)",
+    token_revoked = "token sudah dinonaktifkan",
+    missing_payload_params = "payload tidak lengkap",
+}
+
+local function statusNumber(v)
+    return tonumber(v) or 0
+end
+
+-- Sukses: body (string). Gagal: nil, err table.
+local function httpRequest(url)
     local ok, res = pcall(MakeRequest, url, "GET", authHeaders(), "", CFG.timeout)
 
     if not ok then
-        return nil, "MakeRequest gagal di konteks ini: " .. tostring(res), nil
+        return nil, { kind = "call", status = 0, detail = tostring(res) }
     end
     if type(res) ~= "table" then
-        return nil, "respons bukan tabel: " .. tostring(res), nil
-    end
-    if res.error then
-        return nil, string.format("HTTP %s %s", tostring(res.status), tostring(res.errorMessage)), res.status
-    end
-    if res.status ~= 200 then
-        return nil, "status tak terduga: " .. tostring(res.status), res.status
+        return nil, { kind = "call", status = 0, detail = "respons bukan tabel: " .. type(res) }
     end
 
-    local body = res.content or ""
-    if body:sub(1, 6) == "ERROR:" then
-        return nil, body, res.status
+    local status = statusNumber(res.status)
+    local body = tostring(res.content or "")
+
+    if status == 0 then
+        local msg = res.errorMessage or res.error or "tanpa keterangan"
+        return nil, { kind = "transport", status = 0, detail = tostring(msg) }
+    end
+    if status ~= 200 then
+        return nil, { kind = "http", status = status, detail = body ~= "" and body:sub(1, 120) or ("HTTP " .. status) }
     end
     if body == "" then
-        return nil, "server mengirim body kosong", res.status
+        return nil, { kind = "empty", status = status, detail = "server mengirim body kosong" }
     end
-    return body, nil, res.status
+    if body:sub(1, 6) == "ERROR:" then
+        local code = body:sub(7):match("^([%w_]+)") or body:sub(7)
+        return nil, { kind = "license", status = status, code = code, detail = body:sub(1, 120) }
+    end
+
+    return body
+end
+
+local function probeHealth()
+    local ok, res = pcall(MakeRequest, BASE .. "/healthz", "GET",
+        { ["User-Agent"] = "CGT-License-Loader" }, "", math.min(CFG.timeout, 5000))
+    if not ok then return "pcall gagal: " .. tostring(res) end
+    if type(res) ~= "table" then return "respons bukan tabel: " .. type(res) end
+    return string.format("status=%s body=%s", tostring(res.status), tostring(res.content or ""):sub(1, 24))
+end
+
+local function describeError(stage, err)
+    local status = statusNumber(err.status)
+
+    if err.kind == "license" then
+        local code = err.code or ""
+        local why = REASONS[code] or "kode tidak dikenal"
+        return string.format("ditolak (%d) [%s]: ERROR:%s — %s", status, stage, code, why)
+    end
+    if err.kind == "http" then
+        return string.format("ditolak (HTTP %d) [%s]: %s", status, stage, tostring(err.detail))
+    end
+    if err.kind == "crypto" then
+        return "balasan server tidak bisa didekripsi — token/secret di loader beda dengan panel"
+    end
+    if err.kind == "frame" then
+        return "format balasan tidak dikenal: " .. tostring(err.detail)
+    end
+    if err.kind == "empty" then
+        return "server membalas kosong — cek log panel"
+    end
+    return string.format("gagal konek ke %s (status %d) [%s]: %s",
+        BASE, status, stage, tostring(err.detail or "-"))
+end
+
+local reportedStages = {}
+
+local function reportFailure(stage, err, uid, charName)
+    if CFG.report == false then return end
+    if reportedStages[stage] then return end
+    reportedStages[stage] = true
+
+    local detail = tostring(err.code or err.detail or "-")
+    local url = BASE .. "/api/report?stage=" .. urlEncode(stage)
+        .. "&status=" .. urlEncode(tostring(statusNumber(err.status)))
+        .. "&detail=" .. urlEncode(detail)
+        .. "&uid=" .. urlEncode(uid or "")
+        .. "&char=" .. urlEncode(charName or "")
+    pcall(MakeRequest, url, "GET", authHeaders(), "", 5000)
+end
+
+-- Cetak alasan yang bisa dibaca, lalu laporkan ke panel (best-effort).
+local function fail(stage, err, uid, charName)
+    say(describeError(stage, err), "`4")
+
+    if err.kind == "transport" or err.kind == "call" then
+        say("  timeout=" .. tostring(CFG.timeout) .. "ms · tahap=" .. stage, "`8")
+        say("  cek: koneksi/DNS/VPN device, lalu /healthz panel", "`8")
+        say("  healthz: " .. probeHealth(), "`8")
+    end
+    if CFG.debug then
+        say(string.format("  debug: kind=%s status=%s code=%s detail=%s",
+            tostring(err.kind), tostring(err.status), tostring(err.code), tostring(err.detail)), "`8")
+    end
+
+    reportFailure(stage, err, uid, charName)
+end
+
+--[[ ---------------------------------------------------------------------------
+ * Request lisensi.
+ *
+ * Panel versi lama (sebelum payload terenkripsi) membalas ERROR:bad_request
+ * untuk request ber-payload, jadi loader mencoba sekali lagi dengan format
+ * plaintext ?uid=… selama CFG.legacy tidak dimatikan. Satu file loader jalan
+ * sebelum dan sesudah panel di-upgrade.
+---------------------------------------------------------------------------- ]]
+
+local function legacyScriptsUrl(uid, charName)
+    local u = BASE .. "/api/scripts?uid=" .. urlEncode(uid)
+    if charName ~= "" then u = u .. "&name=" .. urlEncode(charName) end
+    return u
+end
+
+local function legacyVerifyUrl(uid, charName, scriptName)
+    local u = BASE .. "/api/verify?uid=" .. urlEncode(uid) .. "&script=" .. urlEncode(scriptName)
+    if charName ~= "" then u = u .. "&name=" .. urlEncode(charName) end
+    return u
+end
+
+local function legacyNeeded(err)
+    return CFG.legacy ~= false and err ~= nil and err.kind == "license" and err.code == "bad_request"
 end
 
 local function fetchScripts(uid, charName)
     local url, keySecret, timeVal, nonceVal = buildScriptsUrl(uid, charName)
-    local body, err, status = httpGet(url)
-    if not body then return nil, err, status end
+    local body, err = httpRequest(url)
+
+    if not body and legacyNeeded(err) then
+        if CFG.debug then say("panel versi lama terdeteksi, fallback plaintext", "`8") end
+        body, err = httpRequest(legacyScriptsUrl(uid, charName))
+        keySecret = nil
+    end
+    if not body then return nil, err end
+
     if body:sub(1, 4) == "ENC:" then
-        body = decryptPayload(body:sub(5), keySecret, timeVal, nonceVal)
+        local plain = decryptPayload(body:sub(5), keySecret or "", timeVal, nonceVal)
+        if not plain then return nil, { kind = "crypto", status = 200, detail = "daftar script" } end
+        body = plain
     end
-    if not body or body:sub(1, 3) ~= "OK:" then
-        return nil, "format daftar script tidak valid: " .. tostring(body), status
+    if body:sub(1, 3) ~= "OK:" then
+        return nil, { kind = "frame", status = 200, detail = body:sub(1, 60) }
     end
+
     local list = {}
     for item in body:sub(4):gmatch("([^,]+)") do
         local trimmed = item:match("^%s*(.-)%s*$")
         if trimmed ~= "" then list[#list + 1] = trimmed end
     end
     if #list == 0 then
-        return nil, "ERROR:no_scripts", status
+        return nil, { kind = "license", status = 200, code = "no_scripts", detail = "ERROR:no_scripts" }
     end
-    return list, nil, status
+    return list
 end
 
 local function fetchSource(uid, charName, scriptName)
     local url, keySecret, timeVal, nonceVal = buildUrl(uid, charName, scriptName)
-    local body, err, status = httpGet(url)
-    if not body then return nil, err, status end
+    local body, err = httpRequest(url)
+
+    if not body and legacyNeeded(err) then
+        if CFG.debug then say("panel versi lama terdeteksi, fallback plaintext", "`8") end
+        body, err = httpRequest(legacyVerifyUrl(uid, charName, scriptName))
+        keySecret = nil
+    end
+    if not body then return nil, err end
+
     if body:sub(1, 4) == "ENC:" then
-        body = decryptPayload(body:sub(5), keySecret, timeVal, nonceVal)
+        local plain = decryptPayload(body:sub(5), keySecret or "", timeVal, nonceVal)
+        if not plain then return nil, { kind = "crypto", status = 200, detail = scriptName } end
+        body = plain
     end
-    if not body or body == "" or body:sub(1, 6) == "ERROR:" then
-        return nil, body or "gagal memuat script", status
+    if body:sub(1, 6) == "ERROR:" then
+        local code = body:sub(7):match("^([%w_]+)") or body:sub(7)
+        return nil, { kind = "license", status = 200, code = code, detail = body:sub(1, 120) }
     end
-    return body, nil, status
+    if body == "" then
+        return nil, { kind = "empty", status = 200, detail = "source kosong" }
+    end
+    return body
 end
 
 local function pickScriptDialog(uid, list)
@@ -345,30 +526,32 @@ if not uid then
     return
 end
 
+say("v" .. LOADER_VERSION .. " host=" .. BASE:gsub("^https?://", "") .. " uid=" .. uid, "`8")
+
 local targetScript = CFG.script
 if not targetScript or targetScript == "" or targetScript == "auto" then
-    local list, listErr, listStatus = fetchScripts(uid, charName)
+    local list, listErr = fetchScripts(uid, charName)
     if not list then
-        say("ditolak (" .. tostring(listStatus or "-") .. "): " .. tostring(listErr), "`4")
+        fail("list", listErr, uid, charName)
         return
     end
+
     if #list == 1 then
         targetScript = list[1]
     else
-        local picked, pickErr = pickScriptDialog(uid, list)
-        if not picked then
+        local chosen, pickErr = pickScriptDialog(uid, list)
+        if not chosen then
             say(pickErr, "`4")
+            reportFailure("run", { kind = "frame", status = 200, detail = pickErr }, uid, charName)
             return
         end
-        targetScript = picked
+        targetScript = chosen
     end
 end
 
-local source, err, status = fetchSource(uid, charName, targetScript)
-
+local source, err = fetchSource(uid, charName, targetScript)
 if not source then
-    -- Untuk debugging: tampilkan alasan mentah dari server (ERROR:not_found, dsb).
-    say("ditolak (" .. tostring(status or "-") .. "): " .. tostring(err), "`4")
+    fail("verify", err, uid, charName)
     return
 end
 
@@ -376,4 +559,6 @@ if not CFG.quiet then
     say("ok — " .. #source .. " byte untuk " .. targetScript .. " (UID " .. uid .. ")", "`2")
 end
 
-runSource(source, uid, charName, targetScript)
+if not runSource(source, uid, charName, targetScript) then
+    reportFailure("run", { kind = "frame", status = 200, detail = "RunThread menolak " .. targetScript }, uid, charName)
+end

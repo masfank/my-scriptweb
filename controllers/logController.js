@@ -20,6 +20,11 @@ const RESULT_LABELS = {
   script_mismatch: 'Ditolak · Tidak Punya Izin Script',
   script_missing: 'Error · File .lua Tidak Ditemukan',
   token_revoked: 'Ditolak · Token Nonaktif / Dicabut',
+  client_list: 'Gagal di Client · Daftar Script',
+  client_verify: 'Gagal di Client · Verifikasi',
+  client_run: 'Gagal di Client · Jalankan Script',
+  client_init: 'Gagal di Client · Inisialisasi',
+  client_unknown: 'Gagal di Client · Tidak Diketahui',
 };
 
 function displayTimeFull(iso) {
@@ -84,6 +89,7 @@ exports.list = asyncHandler(async (req, res) => {
       result,
       is_ok: result === 'ok',
       result_label: resultLabel,
+      detail: l.detail || '',
       via: l.via || '-',
       token_id: l.token_id || '',
       token_label: l.token_label || (tok ? tok.label : ''),
