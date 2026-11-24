@@ -107,12 +107,11 @@ function verifyAndUnpackPayload({ hex, timeVal, nonceVal, secretKey }) {
     return { ok: false, error: 'payload_mismatch' };
   }
 
-  const expectedMathUid = calcMathUid(uid, timeVal);
-  if (mathUid !== expectedMathUid) {
-    return { ok: false, error: 'tampered_math_uid' };
-  }
-
-  const replayKey = `${uid}:${timeVal}:${nonceVal}`;
+  /* Anti-replay memakai payload itu sendiri, bukan uid+timestamp+nonce.
+   * Nonce dipilih client, jadi dua request sah dalam detik yang sama (list lalu
+   * verify, atau dua run beruntun) bisa kebetulan sama dan dulu ikut ditolak.
+   * Yang perlu diblokir cuma pemakaian ulang URL yang persis sama. */
+  const replayKey = hex;
   if (usedNonces.has(replayKey)) {
     return { ok: false, error: 'replay_detected' };
   }

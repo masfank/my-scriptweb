@@ -183,7 +183,7 @@ Selalu `Content-Type: text/plain; charset=utf-8`, `Cache-Control: no-store`. Has
 |`ERROR:token_revoked`|Token dinonaktifkan tepat saat request berjalan|
 |`ERROR:encrypted_payload_required`|Request plaintext `?uid=` — panel versi ini hanya menerima payload terenkripsi `?d=&t=&n=`|
 |`ERROR:payload_expired`|Timestamp payload lebih dari 90 detik dari jam server (cek jam device buyer)|
-|`ERROR:replay_detected`|Kombinasi uid+timestamp+nonce sudah dipakai; loader harus membuat nonce baru|
+|`ERROR:replay_detected`|Payload yang persis sama sudah dipakai; URL lama tidak bisa diputar ulang|
 |`ERROR:tampered_math_uid`|`mathUid` di payload tidak cocok dengan uid+timestamp|
 |`ERROR:decryption_failed` / `ERROR:malformed_payload`|Kunci payload tidak cocok (token/secret beda) atau isi payload rusak|
 |`ERROR:rate_limited`|Lebih dari 20 request/menit dari IP yang sama (HTTP 429)|
@@ -207,7 +207,7 @@ Kalau `X-Buyer-Token` dikirim dan tidak dikenal, request tidak jatuh ke secret �
 `ERROR:invalid_secret`. Pindahkan semua buyer ke token, lalu kosongkan secret.
 
 **Jangan pernah kirim token lewat `http://`.** Loader menolak `baseUrl` non-HTTPS kecuali
-`CFG.dev = true` dan hostnya `localhost`/`127.0.0.1`.
+hostnya `localhost`/`127.0.0.1`.
 
 ### Laporan gagal dari sisi buyer
 
@@ -224,12 +224,22 @@ pemilihan header token/secret. Inti bagian yang perlu diganti per buyer hanya `C
 
 ```lua
 local CFG = {
-    baseUrl = "https://domainmu.com",     -- skema http:// ditolak kecuali CFG.dev
+    baseUrl = "https://domainmu.com",     -- skema http:// ditolak kecuali localhost
     token   = "TOKEN_DARI_PANEL_ADMIN",   -- X-Buyer-Token, 64 hex
-    script  = "autofind",
+    secret  = "",                         -- X-App-Secret, dipakai kalau token kosong
+    script  = "autofind",                 -- atau "auto"
     timeout = 10000,
+    quiet   = false,
+    debug   = false,                      -- cetak kind/status/code mentah
+    report  = true,                       -- kirim ringkasan gagal ke /api/report
+    legacy  = true,                       -- fallback plaintext untuk panel versi lama
 }
 ```
+
+Generator di panel (**Tokens → Generator Loader**, `GET /admin/generator/loader`) tidak
+menyimpan template sendiri: ia membaca `loader.lua` di repo dan hanya mengganti blok `CFG`
+(mode `obf` mengenkripsi baseUrl/token/secret lewat `_0xD`). Loader yang diunduh buyer
+selalu identik dengan yang diuji di repo ini.
 
 Kolom tambahan untuk diagnosis:
 

@@ -136,30 +136,17 @@ local function activeSecret()
     return CFG.secret or ""
 end
 
--- Nonce harus unik per payload: server menolak (replay_detected) kalau
--- uid+waktu+nonce pernah dipakai. os.time() cuma sampai detik, jadi dua run
--- dalam detik yang sama akan bertabrakan. Campur jam CPU, alamat tabel, dan
--- nomor urut; semuanya di-pcall karena tidak dijamin ada di semua build CGT.
+-- Nonce harus unik per payload: server menolak (replay_detected) kalau payload
+-- yang persis sama dikirim dua kali. Jangan panggil math.randomseed — seed
+-- eksplisit membuat dua run di detik yang sama menghasilkan nonce identik.
+-- State RNG bawaan host sudah acak per proses; nomor urut menjaga dua payload
+-- dalam satu proses (list lalu verify) tetap berbeda.
 local nonceSeq = 0
-
-local function nonceEntropy()
-    local seed = 0
-    if type(os.clock) == "function" then
-        local c = os.clock()
-        if type(c) == "number" then seed = seed + math.floor((c % 1) * 1000000) end
-    end
-    pcall(function()
-        local addr = tostring({}):match("0x(%x+)")
-        if addr and #addr <= 12 then seed = seed + (tonumber(addr, 16) or 0) end
-    end)
-    return seed
-end
 
 local function makePayload(uid, scriptName, charName)
     local timeVal = os.time()
     nonceSeq = nonceSeq + 1
-    math.randomseed(timeVal + ((tonumber(uid) or 0) % 100000) * 31 + nonceSeq)
-    local nonceVal = tostring((math.random(100000, 9999999) + nonceEntropy() * 7 + nonceSeq * 131) % 1000000007)
+    local nonceVal = tostring(math.random(100000, 9999999)) .. tostring(nonceSeq)
     local mathUid = calcMathUid(uid, timeVal)
     local plain = tostring(uid) .. ":" .. tostring(scriptName) .. ":" .. tostring(timeVal) .. ":" .. nonceVal .. ":" .. mathUid .. ":" .. tostring(charName or "")
     local keySecret = activeSecret()

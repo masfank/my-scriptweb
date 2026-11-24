@@ -14,6 +14,7 @@ const logs = require('../controllers/logController');
 const users = require('../controllers/userController');
 const backup = require('../controllers/backupController');
 const bot = require('../controllers/botController');
+const loaderGen = require('../controllers/loaderGenController');
 
 const router = express.Router();
 
@@ -99,6 +100,7 @@ router.post('/tokens/:id/delete', tokens.remove);
 
 router.get('/secret', requireOwner, settings.show);
 router.post('/secret/rotate', requireOwner, settings.rotate);
+router.get('/generator/loader', loaderGen.show);
 router.post('/secret/legacy', requireOwner, settings.setLegacy);
 
 /* kelola akun admin & leader (khusus Admin) */

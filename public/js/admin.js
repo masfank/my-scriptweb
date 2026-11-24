@@ -412,110 +412,6 @@ function cleanBaseOrigin(raw) {
   return trimmed.replace(/\/(admin|api|login)(\/.*)?$/i, '');
 }
 
-function deterministicKey(seed) {
-  let h = 2166136261;
-  const s = String(seed || 'cgt');
-  for (let i = 0; i < s.length; i++) {
-    h ^= s.charCodeAt(i);
-    h = Math.imul(h, 16777619);
-  }
-  const key = [];
-  for (let i = 0; i < 8; i++) {
-    h ^= h >>> 13;
-    h = Math.imul(h, 1274126177);
-    key.push(((h >>> 0) % 190) + 31);
-  }
-  return key;
-}
-
-function buildObfuscatedLoader({ origin, tokenVal, scriptName, authMode, appSecret }) {
-  const key = deterministicKey(origin);
-  const enc = (str) => {
-    const bytes = Array.from(new TextEncoder().encode(String(str)));
-    return '_0xD({' + bytes.map((b, i) => b ^ key[i % key.length]).join(',') + '})';
-  };
-  const isSecret = authMode === 'secret' && Boolean(appSecret);
-
-  const cfgLines = ['local CFG = {'];
-  if (!isSecret) cfgLines.push(`    token   = "${tokenVal}",`);
-  cfgLines.push(`    script  = "${scriptName}",`);
-  cfgLines.push('    timeout = 10000,');
-  cfgLines.push('    quiet   = false,');
-  cfgLines.push('}');
-
-  const lines = [
-    ...cfgLines,
-    '',
-    '-- DONT EDIT',
-    'local _0xK={' + key.join(',') + '}',
-    'local function _0xD(t) local r={} for i=1,#t do r[i]=string.char(t[i]~_0xK[((i-1)%#_0xK)+1]) end return table.concat(r) end',
-    `local _0xB=${enc(origin)}`,
-    `local _0xP=${enc('`9[lisensi]`w ')}`,
-    'local function _0xSay(m,c) pcall(LogToConsole,_0xP..(c or "`w")..tostring(m).."`0") end',
-  ];
-
-  if (isSecret) {
-    lines.push(`local _0xS=${enc(appSecret)}`);
-  } else {
-    lines.push('local _0xT=tostring(CFG.token or ""):gsub("%s+","")');
-    lines.push('if not _0xT:match("^[a-fA-F0-9]+$") or #_0xT~=64 then _0xSay("Isi token dari admin ke CFG.token dulu","`4") return end');
-  }
-
-  const secRef = isSecret ? '_0xS' : '_0xT';
-  lines.push(
-    'local function _0xKdf(s,l) local h=5381 for i=1,#s do h=(h*33+string.byte(s,i))%2147483647 end local k={} local v=h for i=1,l do v=(v*1103515245+12345)%2147483647 k[i]=math.floor(v/65536)%256 end return k end',
-    'local function _0xMU(u,t) local n=tonumber(u) or 0 local m=(tonumber(t)%1000)+7 return tostring(math.floor(n*31+648321+(m*17))) end',
-    'local function _0xEP(x,s,t,n) local sd=tostring(s)..":"..tostring(t)..":"..tostring(n) local k=_0xKdf(sd,32) local h={} for i=1,#x do local b=string.byte(x,i) local kv=k[((i-1)%#k)+1] local r=(b+kv+(i*13))%256 h[#h+1]=string.format("%02x",r) end return table.concat(h) end',
-    'local function _0xDP(x,s,t,n) local sd=tostring(s)..":"..tostring(t)..":"..tostring(n) local k=_0xKdf(sd,32) local r={} local idx=1 for i=1,#x,2 do local b=tonumber(x:sub(i,i+1),16) if not b then return nil end local kv=k[((idx-1)%#k)+1] local v=(b-kv-(idx*13))%256 if v<0 then v=v+256 end r[#r+1]=string.char(v) idx=idx+1 end return table.concat(r) end',
-    `local function _0xMk(u,sc,c) local t=os.time() math.randomseed(t+(tonumber(u) or 0)) local n=tostring(math.random(1000,9999)) local mu=_0xMU(u,t) local p=tostring(u)..":"..tostring(sc)..":"..tostring(t)..":"..n..":"..mu..":"..tostring(c or "") return _0xEP(p,${secRef},t,n),t,n,${secRef} end`,
-    'local function _0xEnc(s) return tostring(s or ""):gsub("([^%w%-_%.~])",function(c) return string.format("%%%02X",string.byte(c)) end) end',
-    'local function _0xNm(me) local w=me.name if (not w or w=="") and type(Client)=="table" and type(Client.GetLocalState)=="function" then local o,st=pcall(Client.GetLocalState) if o and type(st)=="table" and st.name and st.name~="" then w=st.name end end if (not w or w=="") and me.netid and me.netid~=-1 and type(GetPlayer)=="function" then local o,p=pcall(GetPlayer,me.netid) if o and type(p)=="table" and p.name and p.name~="" then w=p.name end end return tostring(w or ""):gsub("`.",""):gsub("^%s*(.-)%s*$","%1") end',
-    'local _0xOk,_0xMe=pcall(GetLocal)',
-    'if not _0xOk or type(_0xMe)~="table" then _0xSay("GetLocal gagal","`4") return end',
-    'local _0xU=tostring(_0xMe.userid or _0xMe.userID or -1)',
-    'if _0xU=="-1" or not _0xU:match("^%d+$") then _0xSay("UID tidak terbaca (masuk world dulu)","`4") return end',
-    'local _0xC=_0xNm(_0xMe)',
-    isSecret
-      ? `local _0xH={[${enc('X-App-Secret')}]=_0xS,[${enc('User-Agent')}]=${enc('CGT-License-Loader')}}`
-      : `local _0xH={[${enc('X-Buyer-Token')}]=_0xT,[${enc('User-Agent')}]=${enc('CGT-License-Loader')}}`,
-    'local function _0xGet(u) local o,r=pcall(MakeRequest,u,"GET",_0xH,"",CFG.timeout or 10000) if not o or type(r)~="table" or r.error or r.status~=200 then return nil,tostring(r and r.status or "-") end local b=r.content or "" if b=="" or b:sub(1,6)==' + enc('ERROR:') + ' then return nil,b end return b,nil end',
-    'local _0xSc=tostring(CFG.script or "")',
-    'if _0xSc=="" or _0xSc=="auto" then',
-    '  local _0xHD,_0xHT,_0xHN,_0xHKS=_0xMk(_0xU,"_list",_0xC)',
-    `  local _0xLU=_0xB..${enc('/api/scripts?d=')}.._0xHD..${enc('&t=')}.._0xHT..${enc('&n=')}.._0xHN`,
-    '  local _0xLB,_0xLE=_0xGet(_0xLU)',
-    '  if _0xLB and _0xLB:sub(1,4)=="ENC:" then _0xLB=_0xDP(_0xLB:sub(5),_0xHKS,_0xHT,_0xHN) end',
-    `  if not _0xLB or _0xLB:sub(1,3)~=${enc('OK:')} then _0xSay("Ditolak: "..tostring(_0xLE or _0xLB),"\`4") return end`,
-    '  local _0xL={} for _0xI in _0xLB:sub(4):gmatch("([^,]+)") do local _0xTr=_0xI:match("^%s*(.-)%s*$") if _0xTr~="" then _0xL[#_0xL+1]=_0xTr end end',
-    '  if #_0xL==0 then _0xSay("ERROR:no_scripts","`4") return end',
-    '  if #_0xL==1 then _0xSc=_0xL[1] else',
-    '    local _0xCh,_0xCn=nil,false',
-    `    local function _0xHp(t) if _0xCh or _0xCn or type(t)~="string" then return false end if not t:find(${enc('cgt_license_picker')},1,true) then return false end local i=t:match(${enc('buttonClicked|pick_(%d+)')}) if i and _0xL[tonumber(i)] then _0xCh=_0xL[tonumber(i)] else _0xCn=true end return true end`,
-    `    AddHook(${enc('OnDialogResult')},${enc('cgt_lic_pk')},function(t) return _0xHp(t) end)`,
-    `    AddHook(${enc('OnSendPacket')},${enc('cgt_lic_pkt')},function(_,p) return _0xHp(p) end)`,
-    '    local _0xD0={"set_default_color|`o","add_label_with_icon|big|`wPilih Script|left|32|","add_spacer|small|","add_textbox|`wUID `2".._0xU.."`w memiliki beberapa script. Pilih salah satu:|left|","add_spacer|small|"}',
-    '    for i,v in ipairs(_0xL) do _0xD0[#_0xD0+1]="add_button|pick_"..i.."|`2"..v.."|noflags|0|0|" end',
-    '    _0xD0[#_0xD0+1]="add_spacer|small|" _0xD0[#_0xD0+1]="add_button|pick_cancel|`4Batal|noflags|0|0|" _0xD0[#_0xD0+1]="end_dialog|cgt_license_picker|||"',
-    `    SendVariantList({[0]=${enc('OnDialogRequest')},[1]=table.concat(_0xD0,"\\n")})`,
-    '    local _0xW=0 while not _0xCh and not _0xCn and _0xW<60000 do Sleep(100) _0xW=_0xW+100 end',
-    `    if type(RemoveHook)=="function" then pcall(RemoveHook,${enc('cgt_lic_pk')}) pcall(RemoveHook,${enc('cgt_lic_pkt')}) end`,
-    '    if not _0xCh then _0xSay(_0xCn and "Dibatalkan" or "Waktu pilih habis","`4") return end',
-    '    _0xSc=_0xCh',
-    '  end',
-    'end',
-    'local _0xVD,_0xVT,_0xVN,_0xVKS=_0xMk(_0xU,_0xSc,_0xC)',
-    `local _0xUrl=_0xB..${enc('/api/verify?d=')}.._0xVD..${enc('&t=')}.._0xVT..${enc('&n=')}.._0xVN`,
-    'local _0xBd,_0xErr=_0xGet(_0xUrl)',
-    'if _0xBd and _0xBd:sub(1,4)=="ENC:" then _0xBd=_0xDP(_0xBd:sub(5),_0xVKS,_0xVT,_0xVN) end',
-    'if not _0xBd then _0xSay("Ditolak: "..tostring(_0xErr),"`4") return end',
-    'if not CFG.quiet then _0xSay("Lisensi OK — memuat ".._0xSc.." (UID ".._0xU..")","`2") end',
-    'LICENSE_UID,LICENSE_SCRIPT=_0xU,_0xSc',
-    'if type(RunThread)=="function" then RunThread(_0xBd,_0xSc) else _0xSay("RunThread butuh CGT v1.5.1+","`4") end'
-  );
-
-  return lines.join('\n');
-}
-
 function syncAuthModeUi() {
   if (!genAuthMode) return 'token';
   const appSecret = genAuthMode.dataset.appSecret || '';
@@ -524,268 +420,39 @@ function syncAuthModeUi() {
   return authMode;
 }
 
-function buildLoaderCode() {
+let genRequestSeq = 0;
+
+/* Loader tidak lagi dibangun dari template JS: permintaan dikirim ke
+ * /admin/generator/loader, yang mengambil loader.lua asli dari repo dan hanya
+ * mengganti blok CFG. Satu sumber kebenaran, tidak ada salinan yang bisa basi. */
+async function buildLoaderCode() {
   if (!genOutput) return '';
   const origin = cleanBaseOrigin(genBaseUrl && genBaseUrl.value);
   const scriptName = (genScript && genScript.value.trim()) || 'auto';
-  const tokenVal = (genToken && genToken.value.trim()) || 'TOKEN-DARI-TIKET-YANG-DIKASIH-ADMIN';
+  const rawToken = (genToken && genToken.value.trim()) || '';
   const mode = (genMode && genMode.value) || 'full';
   const authMode = syncAuthModeUi();
-  const appSecret = (genAuthMode && genAuthMode.dataset.appSecret) || '';
+  const seq = ++genRequestSeq;
 
-  if (mode === 'obf') {
-    const obfCode = buildObfuscatedLoader({ origin, tokenVal, scriptName, authMode, appSecret });
-    genOutput.textContent = obfCode;
-    return obfCode;
+  const params = new URLSearchParams({ mode, auth: authMode, base: origin, script: scriptName });
+  if (authMode === 'token' && /^[a-f0-9]{64}$/i.test(rawToken)) params.set('token', rawToken);
+
+  let text;
+  try {
+    const res = await fetch('/admin/generator/loader?' + params.toString(), {
+      credentials: 'same-origin',
+      headers: { Accept: 'text/plain' },
+    });
+    text = await res.text();
+    if (!res.ok) text = '-- generator gagal: ' + text;
+  } catch (err) {
+    text = '-- generator gagal: ' + err.message;
   }
 
-  const cfgLines = [
-    'local CFG = {',
-    `    baseUrl = "${origin}",`,
-    authMode === 'secret' ? `    secret  = "${appSecret}",` : `    token   = "${tokenVal}",`,
-    `    script  = "${scriptName}",`,
-    '    timeout = 10000,',
-    '    quiet   = false,',
-    '}',
-  ];
-  const cfgBlock = cfgLines.join('\n');
-
-  if (mode === 'cfg') {
-    genOutput.textContent = cfgBlock;
-    return cfgBlock;
-  }
-
-  const headerAuth = authMode === 'secret' ? '["X-App-Secret"] = CFG.secret' : '["X-Buyer-Token"] = CFG.token';
-  const fullCode = `${cfgBlock}
-
-local PREFIX = "\`9[lisensi]\`w "
-local function say(text, color)
-    local c = color or "\`w"
-    pcall(LogToConsole, PREFIX .. c .. tostring(text) .. "\`0")
-end
-
-local function assertBaseUrl(base)
-    local b = base:gsub("/+$", "")
-    if not b:match("^%a[%w+.-]*://") then b = "https://" .. b end
-    if b:match("^https://") then return b end
-    if b:match("^http://localhost[:/]") or b:match("^http://localhost$")
-        or b:match("^http://127%.0%.0%.1[:/]") or b:match("^http://127%.0%.0%.1$") then
-        return b
-    end
-    error("baseUrl wajib menggunakan https://", 0)
-end
-
-local function urlEncode(s)
-    return tostring(s or ""):gsub("([^%w%-_%.~])", function(c)
-        return string.format("%%%02X", string.byte(c))
-    end)
-end
-
-local function getCharName(me)
-    local raw = me.name
-    if (not raw or raw == "") and type(Client) == "table" and type(Client.GetLocalState) == "function" then
-        local okS, st = pcall(Client.GetLocalState)
-        if okS and type(st) == "table" and st.name and st.name ~= "" then
-            raw = st.name
-        end
-    end
-    if (not raw or raw == "") and me.netid and me.netid ~= -1 and type(GetPlayer) == "function" then
-        local okP, p = pcall(GetPlayer, me.netid)
-        if okP and type(p) == "table" and p.name and p.name ~= "" then
-            raw = p.name
-        end
-    end
-    return tostring(raw or ""):gsub("\`.", ""):gsub("^%s*(.-)%s*$", "%1")
-end
-
-local function currentPlayer()
-    local ok, me = pcall(GetLocal)
-    if not ok or type(me) ~= "table" then return nil, nil, "GetLocal gagal" end
-    local uid = tostring(me.userid or me.userID or -1)
-    if uid == "-1" or not uid:match("^%d+$") then return nil, nil, "UID tidak terbaca (masuk world dulu)" end
-    return uid, getCharName(me), nil
-end
-
-local function deriveKey(seedStr, len)
-    local h = 5381
-    for i = 1, #seedStr do
-        h = (h * 33 + string.byte(seedStr, i)) % 2147483647
-    end
-    local key = {}
-    local s = h
-    for i = 1, len do
-        s = (s * 1103515245 + 12345) % 2147483647
-        key[i] = math.floor(s / 65536) % 256
-    end
-    return key
-end
-
-local function calcMathUid(uidStr, timeVal)
-    local u = tonumber(uidStr) or 0
-    local t = (tonumber(timeVal) % 1000) + 7
-    return tostring(math.floor(u * 31 + 648321 + (t * 17)))
-end
-
-local function encryptPayload(text, secret, timeVal, nonceVal)
-    local seed = tostring(secret) .. ':' .. tostring(timeVal) .. ':' .. tostring(nonceVal)
-    local key = deriveKey(seed, 32)
-    local hex = {}
-    for i = 1, #text do
-        local b = string.byte(text, i)
-        local k = key[((i - 1) % #key) + 1]
-        local v = (b + k + (i * 13)) % 256
-        hex[#hex + 1] = string.format("%02x", v)
-    end
-    return table.concat(hex)
-end
-
-local function decryptPayload(hex, secret, timeVal, nonceVal)
-    local seed = tostring(secret) .. ':' .. tostring(timeVal) .. ':' .. tostring(nonceVal)
-    local key = deriveKey(seed, 32)
-    local r = {}
-    local idx = 1
-    for i = 1, #hex, 2 do
-        local b = tonumber(hex:sub(i, i + 1), 16)
-        if not b then return nil end
-        local k = key[((idx - 1) % #key) + 1]
-        local v = (b - k - (idx * 13)) % 256
-        if v < 0 then v = v + 256 end
-        r[#r + 1] = string.char(v)
-        idx = idx + 1
-    end
-    return table.concat(r)
-end
-
-local function activeSecret()
-    return (CFG.token and CFG.token ~= "") and CFG.token or (CFG.secret or "")
-end
-
-local function makePayload(uid, scriptName, charName)
-    local timeVal = os.time()
-    math.randomseed(timeVal + (tonumber(uid) or 0))
-    local nonceVal = tostring(math.random(1000, 9999))
-    local mathUid = calcMathUid(uid, timeVal)
-    local plain = tostring(uid) .. ":" .. tostring(scriptName) .. ":" .. tostring(timeVal) .. ":" .. nonceVal .. ":" .. mathUid .. ":" .. tostring(charName or "")
-    local keySecret = activeSecret()
-    local hex = encryptPayload(plain, keySecret, timeVal, nonceVal)
-    return hex, timeVal, nonceVal, keySecret
-end
-
-local headers = { ${headerAuth}, ["User-Agent"] = "CGT-License-Loader" }
-
-local function httpGet(url)
-    local ok, res = pcall(MakeRequest, url, "GET", headers, "", CFG.timeout)
-    if not ok or type(res) ~= "table" then
-        return nil, "MakeRequest gagal: " .. tostring(res)
-    end
-    if res.error or res.status ~= 200 then
-        local detail = res.errorMessage and (" - " .. tostring(res.errorMessage)) or ""
-        return nil, "HTTP " .. tostring(res.status or "-") .. detail
-    end
-    local body = res.content or ""
-    if body == "" or body:sub(1, 6) == "ERROR:" then
-        return nil, body ~= "" and body or "server mengirim body kosong"
-    end
-    return body, nil
-end
-
-local function pickScriptDialog(uid, list)
-    local chosen, cancelled = nil, false
-    local hookDlg, hookPkt = "cgt_license_picker_dlg", "cgt_license_picker_pkt"
-    local function handlePicker(text)
-        if chosen or cancelled or type(text) ~= "string" then return false end
-        if not text:find("cgt_license_picker", 1, true) then return false end
-        local idx = text:match("buttonClicked|pick_(%d+)")
-        if idx and list[tonumber(idx)] then chosen = list[tonumber(idx)] else cancelled = true end
-        return true
-    end
-    AddHook("OnDialogResult", hookDlg, function(text) return handlePicker(text) end)
-    AddHook("OnSendPacket", hookPkt, function(_, pkt) return handlePicker(pkt) end)
-
-    local dlg = {
-        "set_default_color|\`o",
-        "add_label_with_icon|big|\`wPilih Script|left|32|",
-        "add_spacer|small|",
-        "add_textbox|\`wUID \`2" .. uid .. "\`w memiliki beberapa script. Pilih salah satu:|left|",
-        "add_spacer|small|",
-    }
-    for i, name in ipairs(list) do
-        dlg[#dlg + 1] = "add_button|pick_" .. i .. "|\`2" .. name .. "|noflags|0|0|"
-    end
-    dlg[#dlg + 1] = "add_spacer|small|"
-    dlg[#dlg + 1] = "add_button|pick_cancel|\`4Batal|noflags|0|0|"
-    dlg[#dlg + 1] = "end_dialog|cgt_license_picker|||"
-    SendVariantList({ [0] = "OnDialogRequest", [1] = table.concat(dlg, "\\n") })
-
-    local waited = 0
-    while not chosen and not cancelled and waited < 60000 do
-        Sleep(100)
-        waited = waited + 100
-    end
-    if type(RemoveHook) == "function" then
-        pcall(RemoveHook, hookDlg)
-        pcall(RemoveHook, hookPkt)
-    end
-    if cancelled then return nil, "dibatalkan oleh pengguna" end
-    if not chosen then return nil, "waktu pilih script habis (60 detik)" end
-    return chosen, nil
-end
-
-local okBase, BASE = pcall(assertBaseUrl, CFG.baseUrl)
-if not okBase then say(BASE, "\`4") return end
-
-local uid, charName, uidErr = currentPlayer()
-if not uid then say(uidErr, "\`4") return end
-
-local targetScript = CFG.script
-if not targetScript or targetScript == "" or targetScript == "auto" then
-    local hex, t, n, ks = makePayload(uid, "_list", charName)
-    local listUrl = BASE .. "/api/scripts?d=" .. hex .. "&t=" .. t .. "&n=" .. n
-    local listBody, listErr = httpGet(listUrl)
-    if listBody and listBody:sub(1, 4) == "ENC:" then
-        listBody = decryptPayload(listBody:sub(5), ks, t, n)
-    end
-    if not listBody or listBody:sub(1, 3) ~= "OK:" then
-        say("Ditolak: " .. tostring(listErr or listBody), "\`4")
-        return
-    end
-    local list = {}
-    for item in listBody:sub(4):gmatch("([^,]+)") do
-        local tr = item:match("^%s*(.-)%s*$")
-        if tr ~= "" then list[#list + 1] = tr end
-    end
-    if #list == 0 then say("Ditolak: ERROR:no_scripts", "\`4") return end
-    if #list == 1 then
-        targetScript = list[1]
-    else
-        local picked, pickErr = pickScriptDialog(uid, list)
-        if not picked then say(pickErr, "\`4") return end
-        targetScript = picked
-    end
-end
-
-local hex, t, n, ks = makePayload(uid, targetScript, charName)
-local url = BASE .. "/api/verify?d=" .. hex .. "&t=" .. t .. "&n=" .. n
-local body, err = httpGet(url)
-if body and body:sub(1, 4) == "ENC:" then
-    body = decryptPayload(body:sub(5), ks, t, n)
-end
-if not body then say("Ditolak: " .. tostring(err), "\`4") return end
-
-if not CFG.quiet then
-    say("Lisensi OK — memuat " .. targetScript .. " (UID " .. uid .. ")", "\`2")
-end
-LICENSE_UID, LICENSE_SCRIPT = uid, targetScript
-if type(RunThread) == "function" then
-    RunThread(body, targetScript)
-else
-    say("RunThread membutuhkan CGT v1.5.1+", "\`4")
-end`;
-
-  genOutput.textContent = fullCode;
-  return fullCode;
+  if (seq !== genRequestSeq) return genOutput.textContent || '';
+  genOutput.textContent = text;
+  return text;
 }
-
 if (genBaseUrl && !genBaseUrl.value) {
   const savedBase = localStorage.getItem('lisensi_loader_base_url');
   genBaseUrl.value = savedBase || window.location.origin;
@@ -1051,7 +718,7 @@ for (const fileInput of document.querySelectorAll('[data-import-file]')) {
 if (genCopyBtn) {
   genCopyBtn.addEventListener('click', async () => {
     try {
-      await copyText(buildLoaderCode());
+      await copyText(await buildLoaderCode());
       toast('Snippet loader disalin ke clipboard', 'ok');
     } catch {
       toast('Gagal menyalin otomatis', 'err');
@@ -1060,8 +727,8 @@ if (genCopyBtn) {
 }
 
 if (genDownloadBtn) {
-  genDownloadBtn.addEventListener('click', () => {
-    const code = buildLoaderCode();
+  genDownloadBtn.addEventListener('click', async () => {
+    const code = await buildLoaderCode();
     const scriptName = (genScript && genScript.value.trim()) || 'loader';
     const blob = new Blob([code], { type: 'text/plain;charset=utf-8' });
     const url = URL.createObjectURL(blob);
