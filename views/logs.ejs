@@ -39,6 +39,10 @@
         <span class="metric-label">Ditolak / Gagal</span>
         <span class="metric-val is-danger"><%= stats.rejected %></span>
       </div>
+      <div class="metric-item">
+        <span class="metric-label">Gagal di Client</span>
+        <span class="metric-val is-warn"><%= stats.client %></span>
+      </div>
     </section>
 
     <section class="panel">
@@ -57,6 +61,7 @@
             <option value="semua" <%= filters.status === 'semua' ? 'selected' : '' %>>Semua Hasil</option>
             <option value="ok" <%= filters.status === 'ok' ? 'selected' : '' %>>OK (Berhasil)</option>
             <option value="rejected" <%= filters.status === 'rejected' ? 'selected' : '' %>>Ditolak / Error</option>
+            <option value="client" <%= filters.status === 'client' ? 'selected' : '' %>>Gagal di Client (Koneksi)</option>
           </select>
 
           <select id="filter-script" name="script" class="select-glass" aria-label="Filter script">
@@ -122,7 +127,8 @@
               <tr data-search="<%= searchBlob %>">
                 <td class="mono muted"><%= row.at_display %></td>
                 <td>
-                  <span class="badge <%= row.is_ok ? 'badge-active' : 'badge-banned' %>"<% if (row.detail) { %> title="<%= row.detail %>"<% } %>><%= row.result_label %></span>
+                  <span class="badge <%= row.is_ok ? 'badge-active' : (row.is_client ? 'badge-warn' : 'badge-banned') %>"<% if (row.detail) { %> title="<%= row.detail %>"<% } %>><%= row.result_label %></span>
+                  <% if (row.detail) { %><div class="log-detail mono muted"><%= row.detail %></div><% } %>
                 </td>
                 <td>
                   <% if (row.uid) { %>
@@ -202,8 +208,9 @@
           <div class="uid-card" data-search="<%= searchBlob %>">
             <div class="uid-card-head">
               <code class="mono uid-code"><%= row.uid || '—' %><% if (row.char_name) { %> · <%= row.char_name %><% } %></code>
-              <span class="badge <%= row.is_ok ? 'badge-active' : 'badge-banned' %>"<% if (row.detail) { %> title="<%= row.detail %>"<% } %>><%= row.result_label %></span>
+              <span class="badge <%= row.is_ok ? 'badge-active' : (row.is_client ? 'badge-warn' : 'badge-banned') %>"<% if (row.detail) { %> title="<%= row.detail %>"<% } %>><%= row.result_label %></span>
             </div>
+            <% if (row.detail) { %><div class="log-detail mono muted"><%= row.detail %></div><% } %>
             <div class="uid-card-scripts">
               <% if (row.script) { %><span class="chip"><%= row.script %>.lua</span><% } %>
               <% if (row.token_label) { %><span class="chip"><%= row.token_label %></span><% } %>

@@ -51,7 +51,7 @@ exports.list = asyncHandler(async (req, res) => {
 
   const rawLogs = await store.readLogs();
   for (const item of rawLogs) {
-    if (item && item.script && store.isSafeName(item.script)) {
+    if (item && item.script && store.isSafeName(item.script) && !item.script.startsWith('_')) {
       scriptSet.add(item.script);
     }
   }
@@ -59,11 +59,12 @@ exports.list = asyncHandler(async (req, res) => {
 
   const totalCount = rawLogs.length;
   const okCount = rawLogs.filter((l) => l && l.result === 'ok').length;
+  const clientCount = rawLogs.filter((l) => l && String(l.result).startsWith('client_')).length;
   const rejectedCount = totalCount - okCount;
 
   const q = typeof req.query.q === 'string' ? req.query.q.trim() : '';
   const statusRaw = typeof req.query.status === 'string' ? req.query.status : 'semua';
-  const status = ['semua', 'ok', 'rejected'].includes(statusRaw) ? statusRaw : 'semua';
+  const status = ['semua', 'ok', 'rejected', 'client'].includes(statusRaw) ? statusRaw : 'semua';
   const scriptFilter =
     typeof req.query.script === 'string' && req.query.script !== 'semua'
       ? req.query.script.trim()
@@ -88,6 +89,7 @@ exports.list = asyncHandler(async (req, res) => {
       script: l.script || '',
       result,
       is_ok: result === 'ok',
+      is_client: result.startsWith('client_'),
       result_label: resultLabel,
       detail: l.detail || '',
       via: l.via || '-',
@@ -101,6 +103,8 @@ exports.list = asyncHandler(async (req, res) => {
     entries = entries.filter((e) => e.is_ok);
   } else if (status === 'rejected') {
     entries = entries.filter((e) => !e.is_ok);
+  } else if (status === 'client') {
+    entries = entries.filter((e) => e.is_client);
   }
 
   if (scriptFilter !== 'semua') {
@@ -144,6 +148,7 @@ exports.list = asyncHandler(async (req, res) => {
       total: totalCount,
       ok: okCount,
       rejected: rejectedCount,
+      client: clientCount,
       max: store.MAX_LOGS,
     },
     filters: { q, status, script: scriptFilter },

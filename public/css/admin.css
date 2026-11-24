@@ -439,6 +439,10 @@ pre,
   color: var(--danger);
 }
 
+.metric-val.is-warn {
+  color: var(--warn);
+}
+
 /* ==========================================================================
    Panels, Cards & Tables
    ========================================================================== */
@@ -712,6 +716,16 @@ a.uid-code:hover {
   color: var(--warn);
   background: var(--warn-bg);
   border-color: var(--warn-border);
+}
+
+/* Alasan kegagalan dari loader (status/HTTP/kode). Tooltip di desktop, teks
+ * kecil di bawah badge supaya tetap terbaca di mobile. */
+.log-detail {
+  margin-top: 4px;
+  font-size: 11px;
+  line-height: 1.35;
+  max-width: 240px;
+  overflow-wrap: anywhere;
 }
 
 .chip-list {
