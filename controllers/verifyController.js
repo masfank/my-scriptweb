@@ -195,7 +195,8 @@ async function authenticateAndCheckUid(req, data, { scriptForLog }) {
 
   if (!token) {
     const provided = req.get('x-app-secret');
-    if (!secret || !safeEqual(provided, secret)) {
+    const secretOk = Boolean(secret) && (isEncrypted ? (!provided || safeEqual(provided, secret)) : safeEqual(provided, secret));
+    if (!secretOk) {
       return {
         ok: false,
         result: 'invalid_secret',
